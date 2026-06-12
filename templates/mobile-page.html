@@ -1,0 +1,1655 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>STT Panel</title>
+    <style>
+        /* ═══════════════════════════════════════
+           DESIGN TOKENS
+        ═══════════════════════════════════════ */
+        :root {
+            --bg-base:    #0b0f19;
+            --bg-surface: rgba(23, 28, 41, 0.7);
+            --bg-panel:   #0e131f;
+            --text-primary: #f1f5f9;
+            --text-muted:   #94a3b8;
+            --border:       rgba(255, 255, 255, 0.08);
+            --purple:  #8b5cf6;
+            --blue:    #3b82f6;
+            --amber:   #f59e0b;
+            --red:     #ef4444;
+            --green:   #10b981;
+            --r-card:  14px;
+            --r-panel: 20px;
+            --touch:   44px;
+        }
+
+        /* ═══════════════════════════════════════
+           RESET & BASE
+        ═══════════════════════════════════════ */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: var(--bg-base);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: var(--text-primary);
+            -webkit-text-size-adjust: 100%;
+        }
+
+        /* ═══════════════════════════════════════
+           APP WRAPPER
+        ═══════════════════════════════════════ */
+        #app {
+            position: relative;
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: var(--bg-base);
+        }
+
+        /* ═══════════════════════════════════════
+           SCREENS
+        ═══════════════════════════════════════ */
+        .screen {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(24px);
+            transition: opacity 0.22s ease, transform 0.22s ease;
+            will-change: opacity, transform;
+        }
+        .screen.active {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateX(0);
+        }
+
+        /* ═══════════════════════════════════════
+           TOP BAR (SPEC 01 / GLOBAL)
+        ═══════════════════════════════════════ */
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 56px;
+            padding: 0 16px;
+            background: rgba(11, 15, 25, 0.92);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            z-index: 10;
+        }
+        .topbar-left  { display: flex; align-items: center; gap: 4px; }
+        .topbar-right { display: flex; align-items: center; gap: 4px; }
+        .topbar-center { font-size: 13px; color: var(--text-muted); }
+        .topbar-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+
+        .icon-btn {
+            background: none; border: none;
+            color: var(--text-primary); font-size: 18px; cursor: pointer;
+            min-width: var(--touch); min-height: var(--touch);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .back-btn {
+            background: none; border: none;
+            color: var(--purple); font-size: 22px; font-weight: 300;
+            cursor: pointer;
+            min-width: var(--touch); min-height: var(--touch);
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* ═══════════════════════════════════════
+           SCROLL CONTAINER
+        ═══════════════════════════════════════ */
+        .screen-scroll {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        /* ═══════════════════════════════════════
+           DASHBOARD CARDS (SPEC 01 – Component 2)
+        ═══════════════════════════════════════ */
+        .dash-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 80px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--r-card);
+            padding: 16px;
+            cursor: pointer;
+            transition: background 0.12s;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .dash-card:active { background: rgba(23, 28, 41, 0.95); }
+        .dash-card.disabled { opacity: 0.38; pointer-events: none; }
+
+        .dash-card--purple { border-left: 3px solid var(--purple); }
+        .dash-card--amber  { border-left: 3px solid var(--amber);  }
+        .dash-card--notes  { background: rgba(139, 92, 246, 0.04); }
+
+        .card-left   { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
+        .card-emoji  { font-size: 28px; flex-shrink: 0; line-height: 1; }
+        .card-text   { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .card-title  { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+        .card-sub    { font-size: 13px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .card-sub--italic { font-style: italic; }
+        .card-arrow  { color: var(--text-muted); font-size: 22px; flex-shrink: 0; margin-left: 8px; }
+
+        .card-status {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            margin-top: 4px;
+            font-size: 11px;
+            color: var(--purple);
+        }
+        .card-status.active { display: flex; }
+
+        /* ═══════════════════════════════════════
+           OVERLAY SYSTEM
+        ═══════════════════════════════════════ */
+        .overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 50;
+            display: none;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+        .overlay.open { display: flex; }
+        .overlay--right { flex-direction: row; justify-content: flex-end; }
+
+        .backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(11, 15, 25, 0.6);
+        }
+
+        /* ═══════════════════════════════════════
+           BOTTOM SHEET (SPEC 01 – Component 3)
+        ═══════════════════════════════════════ */
+        .bsheet {
+            position: relative; z-index: 1;
+            background: var(--bg-panel);
+            border-radius: var(--r-panel) var(--r-panel) 0 0;
+            border-top: 1px solid var(--border);
+            padding: 12px 20px 32px;
+            max-height: 88vh;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .bsheet--tall { max-height: 75vh; }
+
+        .bsheet-handle {
+            width: 40px; height: 4px;
+            background: var(--text-muted);
+            border-radius: 2px;
+            margin: 0 auto 16px;
+        }
+        .bsheet-title {
+            font-size: 17px; font-weight: 700; color: var(--text-primary);
+            text-align: center; margin-bottom: 20px;
+        }
+
+        /* ═══════════════════════════════════════
+           SOURCE GRID (SPEC 01 – Bottom Sheet)
+        ═══════════════════════════════════════ */
+        .source-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .src-btn {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 8px;
+            min-height: 90px;
+            background: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 13px; font-weight: 600; color: var(--text-primary);
+            transition: background 0.12s, border-color 0.12s;
+        }
+        .src-btn:active { opacity: 0.7; }
+        .src-btn .src-icon { font-size: 24px; }
+
+        .src-btn--mic  { border: 1px solid rgba(139,92,246,0.5); }
+        .src-btn--file { border: 1px solid rgba(255,255,255,0.12); }
+        .src-btn--yt   { border: 1px solid rgba(239,68,68,0.4); }
+        .src-btn--web  { border: 1px solid rgba(59,130,246,0.4); }
+
+        .src-btn.selected.src-btn--mic  { background: rgba(139,92,246,0.15); border-color: var(--purple); }
+        .src-btn.selected.src-btn--file { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.3); }
+        .src-btn.selected.src-btn--yt   { background: rgba(239,68,68,0.10); border-color: var(--red); }
+        .src-btn.selected.src-btn--web  { background: rgba(59,130,246,0.10); border-color: var(--blue); }
+
+        /* ═══════════════════════════════════════
+           SOURCE INPUT AREAS
+        ═══════════════════════════════════════ */
+        .src-input { display: none; flex-direction: column; gap: 10px; }
+        .src-input.visible { display: flex; }
+
+        .rec-controls { display: flex; align-items: center; gap: 10px; }
+        .rec-btn {
+            flex: 1; padding: 12px; border: none; border-radius: 10px;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+            min-height: var(--touch); transition: opacity 0.15s;
+        }
+        .rec-btn--go   { background: var(--purple); color: #fff; }
+        .rec-btn--stop { background: var(--red); color: #fff; }
+        .rec-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .rec-timer {
+            color: var(--purple); font-size: 16px; font-weight: 700;
+            font-variant-numeric: tabular-nums; min-width: 46px; text-align: center;
+        }
+
+        /* ═══════════════════════════════════════
+           FORM CONTROLS
+        ═══════════════════════════════════════ */
+        .f-input {
+            width: 100%;
+            background: rgba(23, 28, 41, 0.8);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 13px 16px;
+            color: var(--text-primary);
+            font-size: 14px; outline: none;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+        .f-input:focus { border-color: var(--purple); }
+        .f-input::placeholder { color: var(--text-muted); }
+
+        .f-select {
+            background: rgba(23, 28, 41, 0.8);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 9px 12px;
+            color: var(--text-primary);
+            font-size: 13px; outline: none;
+        }
+
+        /* ═══════════════════════════════════════
+           BUTTONS
+        ═══════════════════════════════════════ */
+        .btn-main {
+            width: 100%; padding: 14px;
+            background: var(--purple); color: #fff;
+            border: none; border-radius: 10px;
+            font-size: 15px; font-weight: 700; cursor: pointer;
+            min-height: var(--touch); transition: opacity 0.15s;
+        }
+        .btn-main:active  { opacity: 0.8; }
+        .btn-main:disabled { opacity: 0.35; cursor: not-allowed; }
+
+        .btn-secondary {
+            padding: 10px 16px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 13px; font-weight: 600;
+            cursor: pointer; min-height: var(--touch);
+            transition: background 0.12s;
+        }
+        .btn-secondary:active { background: rgba(255,255,255,0.10); }
+
+        .btn-link {
+            background: none; border: none;
+            color: var(--blue); font-size: 14px;
+            cursor: pointer; text-decoration: none;
+            display: block; text-align: center; padding: 12px 0;
+        }
+
+        /* ═══════════════════════════════════════
+           SPINNER
+        ═══════════════════════════════════════ */
+        .spinner {
+            display: inline-block;
+            width: 14px; height: 14px;
+            border: 2px solid rgba(255,255,255,0.15);
+            border-top-color: var(--purple);
+            border-radius: 50%;
+            animation: spin 0.75s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ═══════════════════════════════════════
+           SCREEN 2: TRANSCRIPTION (SPEC 02)
+        ═══════════════════════════════════════ */
+        .mini-player {
+            display: flex; align-items: center; gap: 12px;
+            background: rgba(23, 28, 41, 0.5);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px 14px;
+            flex-shrink: 0;
+        }
+        .player-icon { font-size: 22px; flex-shrink: 0; }
+        .player-info { flex: 1; min-width: 0; }
+        .player-name {
+            font-size: 13px; font-weight: 600; color: var(--text-primary);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .player-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+        .transc-body {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--r-card);
+            padding: 16px;
+            font-size: 15px; line-height: 1.65;
+            color: var(--text-primary);
+            white-space: pre-wrap; word-break: break-word;
+            flex: 1;
+        }
+        .transc-body.empty { color: var(--text-muted); font-style: italic; }
+
+        /* ═══════════════════════════════════════
+           SCREEN 3: AI NOTES (SPEC 03)
+        ═══════════════════════════════════════ */
+        .notes-summary {
+            background: rgba(23, 28, 41, 0.7);
+            border: 1px solid var(--border);
+            border-top: 3px solid var(--purple);
+            border-radius: var(--r-card);
+            padding: 16px;
+        }
+        .notes-section-label {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 12px; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+        .notes-section-label::before {
+            content: ''; display: block;
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--blue); flex-shrink: 0;
+        }
+        .notes-section-label--amber::before { background: var(--amber); }
+
+        .notes-body-text {
+            font-size: 14px; line-height: 1.65;
+            color: var(--text-primary);
+            white-space: pre-wrap; word-break: break-word;
+        }
+        .notes-body-text.empty { color: var(--text-muted); font-style: italic; }
+
+        /* ═══════════════════════════════════════
+           SCREEN 4: AI CHAT (SPEC 04)
+        ═══════════════════════════════════════ */
+        .chat-feed {
+            flex: 1; overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 16px;
+            display: flex; flex-direction: column; gap: 16px;
+        }
+        .chat-empty-state {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            flex: 1; gap: 12px; padding: 32px;
+            color: var(--text-muted); text-align: center;
+        }
+        .chat-empty-icon { font-size: 40px; opacity: 0.45; }
+        .chat-empty-text { font-size: 14px; line-height: 1.55; }
+
+        /* Message bubbles (SPEC 04 – Component 2) */
+        .bubble {
+            max-width: 76%; padding: 12px;
+            font-size: 14px; line-height: 1.5;
+            color: var(--text-primary);
+            word-break: break-word;
+        }
+        .bubble--user {
+            align-self: flex-end;
+            background: rgba(139,92,246,0.2);
+            border-radius: 14px 14px 2px 14px;
+        }
+        .bubble--ai {
+            align-self: flex-start;
+            background: rgba(23,28,41,0.9);
+            border: 1px solid var(--border);
+            border-radius: 14px 14px 14px 2px;
+        }
+        .bubble-header {
+            font-size: 11px; color: var(--text-muted);
+            margin-bottom: 5px;
+            display: flex; align-items: center; gap: 5px;
+        }
+
+        /* Input bar (SPEC 04 – Component 3) */
+        .chat-bar {
+            display: flex; align-items: flex-end; gap: 10px;
+            padding: 12px 16px;
+            background: var(--bg-panel);
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .chat-textarea {
+            flex: 1;
+            background: rgba(23,28,41,0.7);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 10px 16px;
+            color: var(--text-primary);
+            font-size: 1.2em; outline: none;
+            resize: none; 
+            max-height: 300px;
+            overflow-y: auto; font-family: inherit;
+            transition: border-color 0.2s; line-height: 1.4;
+        }
+        .chat-textarea:focus { 
+            border-color: var(--amber); 
+            height: 15rem;
+        }
+        .chat-textarea::placeholder { color: var(--text-muted); }
+        .chat-textarea:disabled { opacity: 0.4; }
+
+        .chat-send {
+            width: 44px; height: 44px; border-radius: 50%;
+            background: var(--amber); border: none; color: #fff;
+            font-size: 18px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; transition: opacity 0.15s;
+        }
+        .chat-send:disabled { opacity: 0.3; cursor: not-allowed; }
+        .chat-send:active { opacity: 0.7; }
+
+        /* ═══════════════════════════════════════
+           SETTINGS SHEET
+        ═══════════════════════════════════════ */
+        .settings-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .settings-row:last-of-type { border-bottom: none; }
+        .settings-row-lbl { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+        .settings-row-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+        /* Toggle (Spec 01 mode switch) */
+        .tog-wrap { display: flex; align-items: center; gap: 8px; }
+        .tog-label { font-size: 11px; color: var(--text-muted); }
+        .tog { position: relative; width: 48px; height: 26px; }
+        .tog input { opacity: 0; width: 0; height: 0; }
+        .tog-slider {
+            position: absolute; inset: 0;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid var(--border);
+            border-radius: 26px; cursor: pointer;
+            transition: background 0.2s;
+        }
+        .tog-slider::before {
+            content: ''; position: absolute;
+            width: 20px; height: 20px;
+            left: 2px; top: 2px;
+            background: #fff; border-radius: 50%;
+            transition: transform 0.2s;
+        }
+        .tog input:checked + .tog-slider { background: var(--purple); border-color: transparent; }
+        .tog input:checked + .tog-slider::before { transform: translateX(22px); }
+
+        /* ═══════════════════════════════════════
+           SIDEBAR DRAWER (SPEC 05)
+        ═══════════════════════════════════════ */
+        .sidebar {
+            position: relative; z-index: 1;
+            width: 70%; height: 100%;
+            background: var(--bg-panel);
+            border-left: 1px solid var(--border);
+            padding: 24px;
+            display: flex; flex-direction: column;
+        }
+        .sidebar-profile {
+            display: flex; align-items: center; gap: 14px;
+            margin-bottom: 32px;
+        }
+        .sidebar-avatar {
+            width: 48px; height: 48px; border-radius: 50%;
+            background: rgba(139,92,246,0.15);
+            border: 1px solid rgba(139,92,246,0.35);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; flex-shrink: 0;
+        }
+        .sidebar-name { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+        .sidebar-email { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+        .sidebar-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+        .nav-item {
+            display: flex; align-items: center; gap: 16px;
+            padding: 13px 10px; border-radius: 10px;
+            color: var(--text-muted); font-size: 15px;
+            cursor: pointer; text-decoration: none;
+            transition: background 0.12s, color 0.12s;
+        }
+        .nav-item:active, .nav-item.active {
+            background: rgba(139,92,246,0.08);
+            color: var(--text-primary);
+        }
+        .nav-icon { font-size: 18px; width: 24px; text-align: center; flex-shrink: 0; }
+
+        .sidebar-footer { padding-top: 16px; border-top: 1px solid var(--border); }
+        .logout-btn {
+            display: flex; align-items: center; gap: 10px;
+            background: none; border: none;
+            color: var(--red); font-size: 15px; font-weight: 600;
+            cursor: pointer; text-decoration: none;
+            padding: 10px 0; min-height: var(--touch);
+        }
+
+        /* ═══════════════════════════════════════
+           EXPORT BAR
+        ═══════════════════════════════════════ */
+        .export-bar {
+            display: flex; gap: 8px;
+            padding: 10px 16px;
+            background: var(--bg-panel);
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .export-bar .btn-secondary { flex: 1; text-align: center; font-size: 12px; padding: 8px; }
+
+        /* ═══════════════════════════════════════
+           HISTORY SHEET ITEMS
+        ═══════════════════════════════════════ */
+        .hist-list { display: flex; flex-direction: column; gap: 10px; }
+        .hist-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border); border-radius: 10px;
+            cursor: pointer; transition: background 0.12s;
+        }
+        .hist-item:active { background: rgba(255,255,255,0.05); }
+        .hist-info { flex: 1; min-width: 0; }
+        .hist-title {
+            font-size: 14px; font-weight: 600; color: var(--text-primary);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .hist-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+        .hist-chat-count { font-size: 11px; color: var(--amber); margin-top: 2px; }
+        .hist-del {
+            background: none; border: none; color: var(--red);
+            font-size: 16px; cursor: pointer; padding: 8px;
+            min-width: var(--touch); min-height: var(--touch);
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* ═══════════════════════════════════════
+           EMPTY & LOADING STATES
+        ═══════════════════════════════════════ */
+        .empty-state {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            padding: 40px 24px; gap: 12px;
+            color: var(--text-muted); text-align: center;
+        }
+        .empty-icon { font-size: 36px; opacity: 0.4; }
+        .empty-text { font-size: 14px; line-height: 1.55; }
+
+        /* ═══════════════════════════════════════
+           TOAST NOTIFICATION
+        ═══════════════════════════════════════ */
+        #toast {
+            position: absolute; bottom: 96px;
+            left: 50%; transform: translateX(-50%);
+            background: rgba(23,28,41,0.96);
+            border: 1px solid var(--border);
+            border-radius: 10px; padding: 10px 20px;
+            font-size: 13px; color: var(--text-primary);
+            z-index: 200; white-space: nowrap;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.2s;
+        }
+        #toast.show { opacity: 1; }
+
+        /* ═══════════════════════════════════════
+           SAFE AREA (iPhone notch / home bar)
+        ═══════════════════════════════════════ */
+        @supports (padding-bottom: env(safe-area-inset-bottom)) {
+            .chat-bar, .export-bar {
+                /* padding-bottom: calc(12px + env(safe-area-inset-bottom)); */
+                position: sticky;
+                bottom: 1rem;
+            }
+            .bsheet { padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+        }
+
+        /* ═══════════════════════════════════════
+           SCROLLBAR HIDE (iOS-like)
+        ═══════════════════════════════════════ */
+        ::-webkit-scrollbar { display: none; }
+
+        /* ═══════════════════════════════════════
+           FILE INPUT DISPLAY ROW
+        ═══════════════════════════════════════ */
+        .file-info-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px;
+            background: rgba(255,255,255,0.03);
+            border: 1px dashed rgba(255,255,255,0.12);
+            border-radius: 8px;
+            font-size: 13px; color: var(--text-muted);
+        }
+        .file-info-name {
+            flex: 1; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+
+<!-- ═════════════════════════════════════════════════════════
+     SCREEN 1 · MAIN DASHBOARD
+     Spec: 01_main_dashboard.md – Components 1 & 2
+════════════════════════════════════════════════════════════ -->
+<div id="screen-dashboard" class="screen active">
+
+    <div class="topbar">
+        <div class="topbar-left">
+            <span class="topbar-title">STT Panel</span>
+        </div>
+        <span class="topbar-center">{{ user.first_name }} {{ user.last_name }}</span>
+        <div class="topbar-right">
+            <button class="icon-btn" onclick="openHistory()" title="Historia">🕒</button>
+            <button class="icon-btn" onclick="openSidebar()" title="Menu">☰</button>
+        </div>
+    </div>
+
+    <div class="screen-scroll">
+
+        <!-- Card 1: Settings -->
+        <div class="dash-card" onclick="openSettings()">
+            <div class="card-left">
+                <span class="card-emoji">⚙️</span>
+                <div class="card-text">
+                    <span class="card-title">Ustawienia</span>
+                    <span class="card-sub" id="dash-settings-sub">
+                        {% if local_models_enabled %}Lokalnie · Whisper Base{% else %}Chmura AI{% endif %}
+                    </span>
+                </div>
+            </div>
+            <span class="card-arrow">›</span>
+        </div>
+
+        <!-- Card 2: Source -->
+        <div class="dash-card dash-card--purple" onclick="openSource()">
+            <div class="card-left">
+                <span class="card-emoji">📁</span>
+                <div class="card-text">
+                    <span class="card-title">Źródło</span>
+                    <span class="card-sub" id="dash-source-sub">Wybierz źródło audio lub tekstu</span>
+                </div>
+            </div>
+            <span class="card-arrow">›</span>
+        </div>
+
+        <!-- Card 3: Transcription -->
+        <div class="dash-card" id="card-transcription" onclick="nav('transcription')">
+            <div class="card-left">
+                <span class="card-emoji">📝</span>
+                <div class="card-text">
+                    <span class="card-title">Transkrypcja</span>
+                    <span class="card-sub card-sub--italic" id="dash-transc-sub">Brak treści</span>
+                    <div class="card-status" id="dash-transc-status">
+                        <span class="spinner"></span>
+                        <span id="dash-transc-status-text" style="font-size:11px;">Przetwarzanie…</span>
+                    </div>
+                </div>
+            </div>
+            <span class="card-arrow">›</span>
+        </div>
+
+        <!-- Card 4: AI Notes -->
+        <div class="dash-card dash-card--notes" id="card-notes" onclick="nav('notes')">
+            <div class="card-left">
+                <span class="card-emoji">✨</span>
+                <div class="card-text">
+                    <span class="card-title">Notatki AI</span>
+                    <span class="card-sub card-sub--italic" id="dash-notes-sub">Brak treści</span>
+                </div>
+            </div>
+            <span class="card-arrow">›</span>
+        </div>
+
+        <!-- Card 5: AI Chat -->
+        <div class="dash-card dash-card--amber" id="card-chat" onclick="nav('chat')">
+            <div class="card-left">
+                <span class="card-emoji">🤖</span>
+                <div class="card-text">
+                    <span class="card-title">Czat z AI</span>
+                    <span class="card-sub" id="dash-chat-sub">Zadaj pytanie do nagrania</span>
+                </div>
+            </div>
+            <span class="card-arrow">›</span>
+        </div>
+
+    </div>
+</div><!-- /screen-dashboard -->
+
+
+<!-- ═════════════════════════════════════════════════════════
+     SCREEN 2 · TRANSCRIPTION VIEW
+     Spec: 02_transcription_view.md – Components 2 & 3
+════════════════════════════════════════════════════════════ -->
+<div id="screen-transcription" class="screen">
+
+    <div class="topbar">
+        <div class="topbar-left">
+            <button class="back-btn" onclick="nav('dashboard')">‹</button>
+            <span class="topbar-title">Transkrypcja</span>
+        </div>
+    </div>
+
+    <div class="screen-scroll">
+        <!-- Mini player (Spec 02 – Component 2) -->
+        <div class="mini-player">
+            <span class="player-icon">📄</span>
+            <div class="player-info">
+                <div class="player-name" id="player-name">—</div>
+                <div class="player-meta" id="player-meta">Brak aktywnego nagrania</div>
+            </div>
+        </div>
+
+        <!-- Transcription text blocks (Spec 02 – Component 3) -->
+        <div id="transc-full" class="transc-body empty">
+            Brak treści transkrypcji.&#10;Wróć do ekranu głównego i wybierz źródło dźwięku.
+        </div>
+    </div>
+
+    <div class="export-bar">
+        <button class="btn-secondary" onclick="doExport('txt','transcription')">TXT</button>
+        <button class="btn-secondary" onclick="doExport('docx','transcription')">Word</button>
+        <button class="btn-secondary" onclick="doExport('pdf','transcription')">PDF</button>
+    </div>
+</div><!-- /screen-transcription -->
+
+
+<!-- ═════════════════════════════════════════════════════════
+     SCREEN 3 · AI NOTES
+     Spec: 03_ai_notes.md – Components 2 & 3
+════════════════════════════════════════════════════════════ -->
+<div id="screen-notes" class="screen">
+
+    <div class="topbar">
+        <div class="topbar-left">
+            <button class="back-btn" onclick="nav('dashboard')">‹</button>
+            <span class="topbar-title">Notatki AI</span>
+        </div>
+        <div class="topbar-right">
+            <span style="font-size:11px; color:var(--text-muted);" id="notes-model-tag">
+                {{ initial_notes_model_label }}
+            </span>
+        </div>
+    </div>
+
+    <div class="screen-scroll">
+        <!-- Summary header card (Spec 03 – Component 2) -->
+        <div class="notes-summary" id="notes-summary-card" style="display:none;">
+            <div class="notes-section-label">✨ Podsumowanie</div>
+            <div class="notes-body-text" id="notes-summary-text"></div>
+        </div>
+
+        <!-- Full notes content (Spec 03 – Component 3) -->
+        <div id="notes-full" class="notes-body-text empty">
+            Brak notatek AI.&#10;Wróć do ekranu głównego i przetworz nagranie lub stronę.
+        </div>
+    </div>
+
+    <div class="export-bar">
+        <button class="btn-secondary" onclick="doExport('txt','notes')">TXT</button>
+        <button class="btn-secondary" onclick="doExport('docx','notes')">Word</button>
+        <button class="btn-secondary" onclick="doExport('pdf','notes')">PDF</button>
+    </div>
+</div><!-- /screen-notes -->
+
+
+<!-- ═════════════════════════════════════════════════════════
+     SCREEN 4 · AI CHAT
+     Spec: 04_ai_chat.md – Components 2 & 3
+════════════════════════════════════════════════════════════ -->
+<div id="screen-chat" class="screen">
+
+    <div class="topbar">
+        <div class="topbar-left">
+            <button class="back-btn" onclick="nav('dashboard')">‹</button>
+            <span class="topbar-title">Czat z AI</span>
+        </div>
+        <div class="topbar-right">
+            <span style="font-size:11px; color:var(--text-muted); max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                  id="chat-model-badge">{{ default_chat_model_label }}</span>
+        </div>
+    </div>
+
+    <!-- Message feed (Spec 04 – Component 2) -->
+    <div class="chat-feed" id="chat-feed">
+        <div class="chat-empty-state" id="chat-empty">
+            <span class="chat-empty-icon">🤖</span>
+            <span class="chat-empty-text">
+                Przetworz nagranie lub stronę,<br>a następnie zadaj pytanie do jego treści.
+            </span>
+        </div>
+    </div>
+
+    <!-- Input bar (Spec 04 – Component 3) -->
+    <div class="chat-bar">
+        <textarea id="chat-input" class="chat-textarea" rows="1"
+            placeholder="Zadaj pytanie do nagrania…" disabled></textarea>
+        <button id="chat-send" class="chat-send" disabled onclick="sendChat()">↑</button>
+    </div>
+</div><!-- /screen-chat -->
+
+
+<!-- ═════════════════════════════════════════════════════════
+     OVERLAY A · SOURCE BOTTOM SHEET
+     Spec: 01_main_dashboard.md – Component 3
+════════════════════════════════════════════════════════════ -->
+<div id="ov-source" class="overlay">
+    <div class="backdrop" onclick="closeOverlay('ov-source')"></div>
+    <div class="bsheet">
+        <div class="bsheet-handle"></div>
+        <div class="bsheet-title">Wybierz źródło</div>
+
+        <!-- 2×2 Source Grid -->
+        <div class="source-grid">
+            <button class="src-btn src-btn--mic" id="sb-mic" onclick="selectSrc('mic')">
+                <span class="src-icon">🎙</span>Nagraj
+            </button>
+            <button class="src-btn src-btn--file" id="sb-file" onclick="selectSrc('file')">
+                <span class="src-icon">📄</span>Plik
+            </button>
+            <button class="src-btn src-btn--yt" id="sb-yt" onclick="selectSrc('yt')">
+                <span class="src-icon">▶️</span>YouTube
+            </button>
+            <button class="src-btn src-btn--web" id="sb-web" onclick="selectSrc('web')">
+                <span class="src-icon">🌐</span>Strona WWW
+            </button>
+        </div>
+
+        <!-- MIC INPUT -->
+        <div id="si-mic" class="src-input">
+            <div class="rec-controls">
+                <button id="rec-go"   class="rec-btn rec-btn--go"   onclick="startRec()">🎙 Nagraj</button>
+                <span   id="rec-time" class="rec-timer">0:00</span>
+                <button id="rec-stop" class="rec-btn rec-btn--stop" onclick="stopRec()" disabled>■ Stop</button>
+            </div>
+        </div>
+
+        <!-- FILE INPUT -->
+        <div id="si-file" class="src-input">
+            <input type="file" id="file-input-hidden" accept="audio/*,.txt"
+                   style="display:none;" onchange="onFileChosen()">
+            <button class="btn-secondary" style="width:100%;"
+                    onclick="document.getElementById('file-input-hidden').click()">
+                📂 Wybierz plik audio lub .txt
+            </button>
+            <div id="file-chosen-row" class="file-info-row" style="display:none;">
+                <span>📎</span>
+                <span class="file-info-name" id="file-chosen-name"></span>
+            </div>
+            <button id="file-process-btn" class="btn-main" style="display:none;"
+                    onclick="processFile()">Przetwórz plik</button>
+        </div>
+
+        <!-- YOUTUBE INPUT -->
+        <div id="si-yt" class="src-input">
+            <input type="url" id="yt-url" class="f-input"
+                   placeholder="https://www.youtube.com/watch?v=…">
+            <button class="btn-main" style="background: rgba(239,68,68,0.85);"
+                    onclick="processYT()">▶️ Przetwórz YouTube</button>
+        </div>
+
+        <!-- WEB URL INPUT -->
+        <div id="si-web" class="src-input">
+            <input type="url" id="web-url" class="f-input" placeholder="https://…">
+            <button class="btn-main" style="background: rgba(59,130,246,0.85);"
+                    onclick="processWeb()">🌐 Czytaj stronę</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═════════════════════════════════════════════════════════
+     OVERLAY B · SETTINGS BOTTOM SHEET
+════════════════════════════════════════════════════════════ -->
+<div id="ov-settings" class="overlay">
+    <div class="backdrop" onclick="closeOverlay('ov-settings')"></div>
+    <div class="bsheet">
+        <div class="bsheet-handle"></div>
+        <div class="bsheet-title">Ustawienia</div>
+
+        <div class="settings-row">
+            <div>
+                <div class="settings-row-lbl">Tryb przetwarzania</div>
+                <div class="settings-row-sub" id="mode-sub">
+                    {% if local_models_enabled %}Lokalnie (Whisper){% else %}Wymagana Chmura AI{% endif %}
+                </div>
+            </div>
+            <div class="tog-wrap">
+                <span class="tog-label">Lok.</span>
+                <label class="tog">
+                    <input type="checkbox" id="mode-toggle"
+                           {% if not local_models_enabled %}checked disabled{% endif %}
+                           onchange="onModeChange()">
+                    <div class="tog-slider"></div>
+                </label>
+                <span class="tog-label" style="color:var(--blue);">Chmura</span>
+            </div>
+        </div>
+
+        <div class="settings-row" id="row-cloud-model">
+            <div class="settings-row-lbl">Model transkrypcji</div>
+            <select id="sel-cloud-model" class="f-select">
+                {% if cloud_models %}
+                    {% for m in cloud_models %}
+                        <option value="{{ m.id }}"
+                            {% if m.id == default_cloud_model_id %}selected{% endif %}>
+                            {{ m.display_name }}
+                        </option>
+                    {% endfor %}
+                {% else %}
+                    <option value="">Brak modeli</option>
+                {% endif %}
+            </select>
+        </div>
+
+        <div class="settings-row">
+            <div class="settings-row-lbl">Język</div>
+            <select id="sel-lang" class="f-select">
+                <option value="auto">Auto-detekcja</option>
+                <option value="pl">Polski</option>
+                <option value="en">Angielski</option>
+                <option value="de">Niemiecki</option>
+                <option value="es">Hiszpański</option>
+            </select>
+        </div>
+
+        <div class="settings-row">
+            <div class="settings-row-lbl">Zadanie</div>
+            <select id="sel-task" class="f-select">
+                <option value="transcribe">Transkrypcja</option>
+                <option value="translate">Tłumaczenie (→ EN)</option>
+            </select>
+        </div>
+
+        <div class="settings-row">
+            <div class="settings-row-lbl">Model czatu</div>
+            <select id="sel-chat-model" class="f-select">
+                {% if openai_chat_models %}
+                    {% for m in openai_chat_models %}
+                        <option value="{{ m.id }}"
+                            {% if m.id == default_chat_model_id %}selected{% endif %}>
+                            {{ m.display_name }}
+                        </option>
+                    {% endfor %}
+                {% else %}
+                    <option value="">Brak modeli OpenAI</option>
+                {% endif %}
+            </select>
+        </div>
+
+        <a href="{{ url_for('settings') }}" class="btn-link">Zaawansowane ustawienia systemowe →</a>
+    </div>
+</div>
+
+
+<!-- ═════════════════════════════════════════════════════════
+     OVERLAY C · HISTORY BOTTOM SHEET
+════════════════════════════════════════════════════════════ -->
+<div id="ov-history" class="overlay">
+    <div class="backdrop" onclick="closeOverlay('ov-history')"></div>
+    <div class="bsheet bsheet--tall">
+        <div class="bsheet-handle"></div>
+        <div class="bsheet-title">Historia transkrypcji</div>
+        <div class="hist-list" id="hist-list">
+            <div class="empty-state">
+                <span class="spinner"></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═════════════════════════════════════════════════════════
+     OVERLAY D · SIDEBAR DRAWER
+     Spec: 05_sidebar_menu.md – Component 1
+════════════════════════════════════════════════════════════ -->
+<div id="ov-sidebar" class="overlay overlay--right">
+    <div class="backdrop" onclick="closeOverlay('ov-sidebar')"></div>
+    <div class="sidebar">
+
+        <!-- Profile section (Spec 05) -->
+        <div class="sidebar-profile">
+            <div class="sidebar-avatar">👤</div>
+            <div>
+                <div class="sidebar-name">{{ user.first_name }} {{ user.last_name }}</div>
+                <div class="sidebar-email">{{ user.email }}</div>
+            </div>
+        </div>
+
+        <!-- Navigation links (Spec 05) -->
+        <nav class="sidebar-nav">
+            <a class="nav-item active" onclick="openHistory(); closeOverlay('ov-sidebar');">
+                <span class="nav-icon">🕒</span>Historia transkrypcji
+            </a>
+            <a href="{{ url_for('settings') }}" class="nav-item">
+                <span class="nav-icon">⚙️</span>Ustawienia systemowe
+            </a>
+            <a href="{{ url_for('change_password') }}" class="nav-item">
+                <span class="nav-icon">🔑</span>Zmiana hasła
+            </a>
+            <a class="nav-item" onclick="nav('chat'); closeOverlay('ov-sidebar');">
+                <span class="nav-icon">🤖</span>Czat z AI
+            </a>
+        </nav>
+
+        <!-- Footer: Logout (Spec 05) -->
+        <div class="sidebar-footer">
+            <a href="{{ url_for('logout') }}" class="logout-btn">
+                <span>↩</span> Wyloguj się
+            </a>
+        </div>
+    </div>
+</div>
+
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Hidden export form -->
+<form id="export-form" method="POST" style="display:none;">
+    <input type="hidden" name="content" id="export-content">
+    <input type="hidden" name="title"   id="export-title">
+</form>
+
+</div><!-- #app -->
+
+<script>
+    /* ═══════════════════════════════════════════
+       CONSTANTS FROM FLASK CONTEXT
+    ═══════════════════════════════════════════ */
+    const LOCAL_MODELS_ENABLED = {{ 'true' if local_models_enabled else 'false' }};
+    const DEFAULT_CHAT_LABEL   = {{ (default_chat_model_label or '')|tojson }};
+
+    /* ═══════════════════════════════════════════
+       STATE
+    ═══════════════════════════════════════════ */
+    let activeRecordId    = null;
+    let docName           = 'Transkrypcja';
+    let currentTranscription = '';
+    let currentNotes         = '';
+    let chatMessages         = [];
+    let selectedSrc          = null;
+    let selectedFileObj      = null;
+
+    // Recording
+    let mediaRecorder = null;
+    let audioChunks   = [];
+    let recTicker     = null;
+    let recSecs       = 0;
+
+    /* ═══════════════════════════════════════════
+       SCREEN NAVIGATION
+    ═══════════════════════════════════════════ */
+    function nav(screenId) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById('screen-' + screenId).classList.add('active');
+    }
+
+    /* ═══════════════════════════════════════════
+       OVERLAY MANAGEMENT
+    ═══════════════════════════════════════════ */
+    function openOverlay(id)  { document.getElementById(id).classList.add('open'); }
+    function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+
+    function openSource()   { openOverlay('ov-source'); }
+    function openSettings() { openOverlay('ov-settings'); }
+    function openSidebar()  { openOverlay('ov-sidebar'); }
+
+    function openHistory() {
+        openOverlay('ov-history');
+        loadHistory();
+    }
+
+    /* ═══════════════════════════════════════════
+       SOURCE SELECTION
+    ═══════════════════════════════════════════ */
+    const SRC_BTNS   = { mic:'sb-mic', file:'sb-file', yt:'sb-yt', web:'sb-web' };
+    const SRC_INPUTS = { mic:'si-mic', file:'si-file', yt:'si-yt', web:'si-web' };
+
+    function selectSrc(type) {
+        selectedSrc = type;
+        Object.values(SRC_BTNS).forEach(id => document.getElementById(id).classList.remove('selected'));
+        Object.values(SRC_INPUTS).forEach(id => document.getElementById(id).classList.remove('visible'));
+        document.getElementById(SRC_BTNS[type]).classList.add('selected');
+        document.getElementById(SRC_INPUTS[type]).classList.add('visible');
+    }
+
+    /* ═══════════════════════════════════════════
+       RECORDING (Mic source)
+    ═══════════════════════════════════════════ */
+    function fmtTime(s) {
+        return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+    }
+
+    async function startRec() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioChunks = []; recSecs = 0;
+            document.getElementById('rec-time').textContent = '0:00';
+
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            mediaRecorder.onstop = () => {
+                clearInterval(recTicker);
+                const blob = new Blob(audioChunks, { type: 'audio/wav' });
+                submitFormData(buildFormData(blob, 'recording.wav'));
+            };
+            mediaRecorder.start();
+
+            document.getElementById('rec-go').disabled   = true;
+            document.getElementById('rec-stop').disabled = false;
+            recTicker = setInterval(() => {
+                recSecs++;
+                document.getElementById('rec-time').textContent = fmtTime(recSecs);
+            }, 1000);
+        } catch {
+            showToast('Brak dostępu do mikrofonu');
+        }
+    }
+
+    function stopRec() {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        }
+        document.getElementById('rec-go').disabled   = false;
+        document.getElementById('rec-stop').disabled = true;
+    }
+
+    /* ═══════════════════════════════════════════
+       FILE UPLOAD
+    ═══════════════════════════════════════════ */
+    function onFileChosen() {
+        const f = document.getElementById('file-input-hidden').files[0];
+        if (!f) return;
+        selectedFileObj = f;
+        document.getElementById('file-chosen-name').textContent = f.name;
+        document.getElementById('file-chosen-row').style.display = 'flex';
+        document.getElementById('file-process-btn').style.display = 'block';
+    }
+
+    function processFile() {
+        if (!selectedFileObj) return;
+        submitFormData(buildFormData(selectedFileObj, selectedFileObj.name));
+    }
+
+    /* ═══════════════════════════════════════════
+       YOUTUBE & WEBPAGE
+    ═══════════════════════════════════════════ */
+    function processYT() {
+        const url = document.getElementById('yt-url').value.trim();
+        if (!url) { showToast('Wklej link YouTube'); return; }
+        const fd = buildFormData(null, '');
+        fd.append('youtube_url', url);
+        submitFormData(fd);
+    }
+
+    function processWeb() {
+        const url = document.getElementById('web-url').value.trim();
+        if (!url) { showToast('Wklej adres URL strony'); return; }
+        const fd = buildFormData(null, '');
+        fd.append('webpage_url', url);
+        submitFormData(fd);
+    }
+
+    /* ═══════════════════════════════════════════
+       FORM DATA BUILDER
+    ═══════════════════════════════════════════ */
+    function getSettings() {
+        const cloud = document.getElementById('mode-toggle').checked;
+        return {
+            processing_mode: cloud ? 'online' : 'offline',
+            cloud_model_id:  document.getElementById('sel-cloud-model').value,
+            language:        document.getElementById('sel-lang').value,
+            task:            document.getElementById('sel-task').value,
+            model_name:      'base'
+        };
+    }
+
+    function buildFormData(blob, filename) {
+        const s  = getSettings();
+        const fd = new FormData();
+        if (blob) fd.append('file', blob, filename);
+        fd.append('processing_mode', s.processing_mode);
+        fd.append('cloud_model_id',  s.cloud_model_id);
+        fd.append('language',        s.language);
+        fd.append('task',            s.task);
+        fd.append('model_name',      s.model_name);
+        fd.append('custom_name',     docName !== 'Transkrypcja' ? docName : (filename || ''));
+        return fd;
+    }
+
+    /* ═══════════════════════════════════════════
+       CORE PROCESSOR
+    ═══════════════════════════════════════════ */
+    async function submitFormData(formData) {
+        closeOverlay('ov-source');
+        nav('dashboard');
+        setProcessing(true);
+
+        try {
+            const res  = await fetch('/transcribe', { method: 'POST', body: formData });
+            const data = await res.json();
+
+            if (data.text) {
+                currentTranscription = data.text.trim();
+                currentNotes         = (data.notes || '').trim();
+                docName              = data.saved_name || docName;
+                activeRecordId       = data.record_id  || null;
+
+                refreshDashCards();
+                refreshTranscScreen();
+                refreshNotesScreen();
+                if (activeRecordId) enableChat();
+
+                setProcessing(false);
+                showToast('✓ Przetworzono pomyślnie');
+            } else {
+                setProcessing(false);
+                showToast('Błąd: ' + (data.error || 'Nieznany błąd'));
+            }
+        } catch {
+            setProcessing(false);
+            showToast('Błąd połączenia z serwerem');
+        }
+    }
+
+    function setProcessing(on, msg = 'Przetwarzanie…') {
+        const st  = document.getElementById('dash-transc-status');
+        const txt = document.getElementById('dash-transc-status-text');
+        const sub = document.getElementById('dash-transc-sub');
+        txt.textContent = msg;
+        st.classList.toggle('active', on);
+        sub.style.display = on ? 'none' : '';
+    }
+
+    /* ═══════════════════════════════════════════
+       REFRESH UI AFTER DATA LOADED
+    ═══════════════════════════════════════════ */
+    function refreshDashCards() {
+        const clamp = (s, n) => s.length > n ? s.slice(0, n) + '…' : s;
+        const hasSource = !!activeRecordId || !!currentTranscription;
+
+        const tSub = document.getElementById('dash-transc-sub');
+        if (currentTranscription) {
+            tSub.textContent = clamp(currentTranscription, 62);
+            tSub.classList.remove('card-sub--italic');
+        }
+
+        const nSub = document.getElementById('dash-notes-sub');
+        if (currentNotes) {
+            nSub.textContent = clamp(currentNotes.replace(/#+\s*/g,''), 62);
+            nSub.classList.remove('card-sub--italic');
+        }
+
+        document.getElementById('dash-chat-sub').textContent =
+            activeRecordId ? clamp(docName, 30) : 'Zadaj pytanie do nagrania';
+
+        document.getElementById('dash-source-sub').textContent = clamp(docName, 30);
+
+        ['card-transcription', 'card-notes', 'card-chat'].forEach(id => {
+            document.getElementById(id).classList.toggle('disabled', !hasSource);
+        });
+    }
+
+    function refreshTranscScreen() {
+        const el = document.getElementById('transc-full');
+        if (currentTranscription) {
+            el.textContent = currentTranscription;
+            el.classList.remove('empty');
+        }
+        document.getElementById('player-name').textContent = docName;
+        document.getElementById('player-meta').textContent =
+            currentTranscription.length.toLocaleString('pl-PL') + ' znaków';
+    }
+
+    function refreshNotesScreen() {
+        const el = document.getElementById('notes-full');
+        if (currentNotes) {
+            el.textContent = currentNotes;
+            el.classList.remove('empty');
+        }
+    }
+
+    /* ═══════════════════════════════════════════
+       AI CHAT
+    ═══════════════════════════════════════════ */
+    function getMarkdownSection(text, heading) {
+        const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`(^|\\n)\\s*#{0,6}\\s*${escaped}\\s*:?\\s*(?:\\n|$)`, 'i');
+        const m = re.exec(text);
+        if (!m) return '';
+        const tail = text.slice(m.index + m[0].length);
+        const next = tail.search(/\n\s*#{1,6}\s+\S/);
+        return next >= 0 ? tail.slice(0, next) : tail;
+    }
+
+    function readJsonStringValue(raw) {
+        try { return JSON.parse(`"${raw}"`).trim(); }
+        catch { return raw.replace(/\\"/g, '"').replace(/\\n/g, '\n').trim(); }
+    }
+
+    function extractAuthenticityPrompt(notesText) {
+        const heading = 'PROMPT DO SPRAWDZENIA AUTENTYCZNOŚCI';
+        if (!notesText || !notesText.toUpperCase().includes(heading)) return '';
+        const section = getMarkdownSection(notesText, heading);
+        if (!section) return '';
+        const norm = section.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+        const s = norm.indexOf('{'), e = norm.lastIndexOf('}');
+        if (s >= 0 && e > s) {
+            try {
+                const p = JSON.parse(norm.slice(s, e + 1));
+                if (p && typeof p.prompt === 'string') return p.prompt.trim();
+            } catch {}
+        }
+        const m = norm.match(/"prompt"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+        return m ? readJsonStringValue(m[1]) : '';
+    }
+
+    function populateChatInputFromAuthenticityPrompt() {
+        const prompt = extractAuthenticityPrompt(currentNotes);
+        if (!prompt) return false;
+        document.getElementById('chat-input').value = prompt;
+        return true;
+    }
+
+    function enableChat() {
+        const inp = document.getElementById('chat-input');
+        const btn = document.getElementById('chat-send');
+        inp.disabled = false;
+        btn.disabled = false;
+        document.getElementById('chat-empty').style.display = 'none';
+        populateChatInputFromAuthenticityPrompt();
+    }
+
+    async function sendChat() {
+        const inp = document.getElementById('chat-input');
+        const q   = inp.value.trim();
+        if (!q || !activeRecordId) return;
+
+        const btn = document.getElementById('chat-send');
+        btn.disabled = true;
+        inp.value = '';
+        inp.style.height = 'auto';
+
+        appendBubble('user', q);
+        const loader = appendBubble('ai', '…', true);
+
+        try {
+            const chatModelId = document.getElementById('sel-chat-model').value;
+            const res  = await fetch('/ask-question', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: activeRecordId, question: q, chat_model_id: chatModelId })
+            });
+            const data = await res.json();
+            loader.remove();
+
+            if (data.answer) {
+                appendBubble('ai', data.answer);
+                chatMessages.push({ role: 'user', content: q });
+                chatMessages.push({ role: 'assistant', content: data.answer, engine: data.engine });
+
+                const badge = document.getElementById('chat-model-badge');
+                if (data.engine) badge.textContent = data.engine;
+
+                const userCount = chatMessages.filter(m => m.role === 'user').length;
+                document.getElementById('dash-chat-sub').textContent =
+                    userCount + (userCount === 1 ? ' pytanie' : ' pytań');
+            } else {
+                appendBubble('ai', 'Błąd: ' + (data.error || 'Brak odpowiedzi'));
+            }
+        } catch {
+            loader.remove();
+            appendBubble('ai', 'Błąd połączenia z serwerem.');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function shortenUrl(url) {
+        try {
+            const u = new URL(url);
+            let display = u.hostname.replace(/^www\./, '');
+            const parts = u.pathname.replace(/\/$/, '').split('/').filter(Boolean);
+            if (parts.length > 0) {
+                const last = decodeURIComponent(parts[parts.length - 1]).replace(/_/g, ' ');
+                display += ' › ' + (last.length > 32 ? last.slice(0, 32) + '…' : last);
+            }
+            return display;
+        } catch {
+            return url.length > 50 ? url.slice(0, 47) + '…' : url;
+        }
+    }
+
+    function formatAiText(text) {
+        const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        let html = esc(text || '');
+        // markdown links [label](url)
+        html = html.replace(/\[([^\]]+)\]\(((https?:\/\/)[^)\s]+)\)/g, (_, label, url) =>
+            `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+        // bare URLs
+        html = html.replace(/(^|[\s(>])((https?:\/\/)[^\s<)"]+)/g, (_, pre, url) =>
+            `${pre}<a href="${url}" target="_blank" rel="noopener noreferrer">${shortenUrl(url)}</a>`);
+        // bold, italic, inline code
+        html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+        // headings
+        html = html.replace(/(^|\n)(#{1,3}) ([^\n]+)/g, (_, pre, hashes, content) =>
+            `${pre}<strong>${content}</strong>`);
+        // line breaks
+        html = html.replace(/\n/g, '<br>');
+        return html;
+    }
+
+    function appendBubble(role, text, loading = false) {
+        const feed  = document.getElementById('chat-feed');
+        const empty = document.getElementById('chat-empty');
+        if (empty) empty.style.display = 'none';
+
+        const wrap = document.createElement('div');
+        wrap.className = 'bubble bubble--' + (role === 'user' ? 'user' : 'ai');
+
+        if (role !== 'user' && !loading) {
+            const hdr = document.createElement('div');
+            hdr.className = 'bubble-header';
+            hdr.textContent = '🤖 AI';
+            wrap.appendChild(hdr);
+        }
+
+        const body = document.createElement('div');
+        if (loading) {
+            body.innerHTML = '<span class="spinner"></span>';
+        } else if (role === 'user') {
+            body.textContent = text;
+        } else {
+            body.innerHTML = formatAiText(text);
+        }
+        wrap.appendChild(body);
+
+        feed.appendChild(wrap);
+        wrap.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        return wrap;
+    }
+
+    /* ═══════════════════════════════════════════
+       SETTINGS
+    ═══════════════════════════════════════════ */
+    function onModeChange() {
+        const cloud = document.getElementById('mode-toggle').checked;
+        document.getElementById('mode-sub').textContent =
+            cloud ? 'Chmura AI (Groq / OpenAI)' : 'Lokalnie (Whisper)';
+        document.getElementById('row-cloud-model').style.opacity = cloud ? '1' : '0.4';
+    }
+
+    /* ═══════════════════════════════════════════
+       HISTORY
+    ═══════════════════════════════════════════ */
+    async function loadHistory() {
+        const list = document.getElementById('hist-list');
+        list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
+
+        try {
+            const res  = await fetch('/get-history');
+            const data = await res.json();
+
+            if (!data.length) {
+                list.innerHTML = '<div class="empty-state"><span class="empty-icon">🕒</span><span class="empty-text">Brak zapisanych transkrypcji.</span></div>';
+                return;
+            }
+
+            list.innerHTML = '';
+            data.forEach(item => {
+                const el = document.createElement('div');
+                el.className = 'hist-item';
+
+                const chatCount = Number(item.chat_count || 0);
+                const chatInfo  = chatCount > 0
+                    ? `<div class="hist-chat-count">Czat: ${chatCount} wiad.</div>`
+                    : '';
+
+                el.innerHTML = `
+                    <div class="hist-info">
+                        <div class="hist-title">${esc(item.filename)}</div>
+                        <div class="hist-meta">${esc(item.created_at)}</div>
+                        ${chatInfo}
+                    </div>
+                    <button class="hist-del" aria-label="Usuń">🗑️</button>
+                `;
+                el.querySelector('.hist-info').addEventListener('click', () => loadHistItem(item));
+                el.querySelector('.hist-del').addEventListener('click', (e) => delHistItem(item.id, e));
+                list.appendChild(el);
+            });
+        } catch {
+            list.innerHTML = '<div class="empty-state"><span class="empty-text" style="color:var(--red);">Błąd ładowania historii.</span></div>';
+        }
+    }
+
+    function loadHistItem(item) {
+        currentTranscription = item.raw_text  || '';
+        currentNotes         = item.ai_notes  || '';
+        docName              = item.filename  || 'Transkrypcja';
+        activeRecordId       = item.id;
+
+        refreshDashCards();
+        refreshTranscScreen();
+        refreshNotesScreen();
+        enableChat();
+
+        if (item.chat_messages && item.chat_messages.length) {
+            chatMessages = item.chat_messages;
+            document.getElementById('chat-feed').innerHTML = '';
+            item.chat_messages.forEach(m => appendBubble(m.role, m.content));
+        }
+
+        closeOverlay('ov-history');
+        showToast('Wczytano: ' + item.filename.slice(0, 28));
+    }
+
+    async function delHistItem(id, event) {
+        event.stopPropagation();
+        if (!confirm('Usunąć ten wpis z historii?')) return;
+        const res = await fetch(`/delete-history/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+            if (activeRecordId === id) {
+                activeRecordId = null;
+                document.getElementById('chat-input').disabled = true;
+                document.getElementById('chat-send').disabled  = true;
+            }
+            loadHistory();
+        }
+    }
+
+    /* ═══════════════════════════════════════════
+       EXPORT
+    ═══════════════════════════════════════════ */
+    function doExport(fmt, type) {
+        const content = type === 'transcription' ? currentTranscription : currentNotes;
+        const prefix  = type === 'transcription' ? 'Transkrypcja' : 'Notatki AI';
+        const title   = `${prefix} - ${docName}`;
+
+        if (!content) { showToast('Brak treści do eksportu'); return; }
+
+        if (fmt === 'txt') {
+            const a = document.createElement('a');
+            a.href     = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
+            a.download = `${title}.txt`;
+            a.click();
+            return;
+        }
+
+        document.getElementById('export-form').action    = `/export/${fmt}`;
+        document.getElementById('export-content').value  = content;
+        document.getElementById('export-title').value    = title;
+        document.getElementById('export-form').submit();
+    }
+
+    /* ═══════════════════════════════════════════
+       UTILITIES
+    ═══════════════════════════════════════════ */
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 2600);
+    }
+
+    function esc(s) {
+        return String(s || '')
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+            .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    /* ═══════════════════════════════════════════
+       AUTO-GROW TEXTAREA
+    ═══════════════════════════════════════════ */
+    document.addEventListener('DOMContentLoaded', () => {
+        const ta = document.getElementById('chat-input');
+        ta.addEventListener('input', function () {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 110) + 'px';
+        });
+        ta.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendChat();
+            }
+        });
+
+        onModeChange(); // sync opacity on load
+        refreshDashCards(); // apply disabled state on first render
+    });
+</script>
+</body>
+</html>

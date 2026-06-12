@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System STT - Zmiana Hasła</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-main: #0b0f19;
+            --bg-card: rgba(23, 28, 41, 0.78);
+            --bg-input: rgba(11, 15, 25, 0.72);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent-purple: #8b5cf6;
+            --accent-blue: #3b82f6;
+            --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%);
+            --danger: #ef4444;
+            --success: #10b981;
+            color-scheme: dark;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            background-image:
+                radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.16) 0px, transparent 48%),
+                radial-gradient(at 100% 100%, rgba(59, 130, 246, 0.14) 0px, transparent 48%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .password-container {
+            width: 100%;
+            max-width: 440px;
+        }
+
+        .password-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+            padding: 40px 30px;
+        }
+
+        .brand-icon {
+            width: 60px;
+            height: 60px;
+            background: rgba(239, 68, 68, 0.12);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.22);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 20px auto;
+        }
+
+        .password-title {
+            color: var(--text-main);
+            font-weight: 700;
+            font-size: 24px;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .password-subtitle {
+            color: var(--text-muted);
+            font-size: 14px;
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .form-label {
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+
+        .form-control {
+            background-color: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 15px;
+            transition: all 0.2s ease;
+        }
+
+        .form-control::placeholder {
+            color: rgba(148, 163, 184, 0.65);
+        }
+
+        .form-control:focus {
+            background-color: rgba(11, 15, 25, 0.9);
+            color: var(--text-main);
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.16);
+        }
+
+        .form-control:-webkit-autofill,
+        .form-control:-webkit-autofill:hover,
+        .form-control:-webkit-autofill:focus {
+            -webkit-text-fill-color: var(--text-main);
+            box-shadow: 0 0 0 1000px #111827 inset;
+        }
+
+        .btn-primary {
+            background: var(--accent-gradient);
+            border: none;
+            border-radius: 8px;
+            padding: 11px;
+            font-weight: 600;
+            font-size: 15px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.92;
+            box-shadow: 0 8px 22px rgba(59, 130, 246, 0.24);
+        }
+
+        .back-link {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 14px;
+        }
+
+        .back-link a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .back-link a:hover {
+            color: var(--text-main);
+        }
+
+        .alert {
+            border-radius: 8px;
+            font-size: 14px;
+            padding: 12px;
+            margin-bottom: 20px;
+        }
+
+        .alert-danger {
+            color: #fecaca;
+            background-color: rgba(239, 68, 68, 0.12);
+            border-color: rgba(239, 68, 68, 0.28);
+        }
+
+        .alert-success {
+            color: #bbf7d0;
+            background-color: rgba(16, 185, 129, 0.12);
+            border-color: rgba(16, 185, 129, 0.28);
+        }
+
+        .btn-close {
+            filter: invert(1) grayscale(100%) brightness(180%);
+            opacity: 0.7;
+        }
+
+        .password-card hr {
+            border-color: var(--border-color);
+            opacity: 1 !important;
+        }
+
+        @media (max-width: 480px) {
+            .password-card {
+                padding: 30px 22px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="password-container">
+    <div class="password-card">
+        
+        <div class="brand-icon">
+            <i class="bi bi-shield-lock-fill"></i>
+        </div>
+
+        <h1 class="password-title">Zmień hasło</h1>
+        <p class="password-subtitle">Wprowadź aktualne oraz nowe dane dostępowe</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'danger' else 'success' }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form action="{{ url_for('change_password') }}" method="POST">
+            
+            <div class="mb-3">
+                <label for="current_password" class="form-label">Aktualne hasło</label>
+                <input type="password" class="form-control" id="current_password" name="current_password" placeholder="••••••••" required autocomplete="current-password">
+            </div>
+
+            <hr class="my-4 text-muted" style="opacity: 0.15;">
+            
+            <div class="mb-3">
+                <label for="new_password" class="form-label">Nowe hasło</label>
+                <input type="password" class="form-control" id="new_password" name="new_password" placeholder="••••••••" required autocomplete="new-password">
+            </div>
+            
+            <div class="mb-4">
+                <label for="confirm_new_password" class="form-label">Powtórz nowe hasło</label>
+                <input type="password" class="form-control" id="confirm_new_password" name="confirm_new_password" placeholder="••••••••" required autocomplete="new-password">
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100">Zapisz nowe hasło</button>
+        </form>
+
+        <div class="back-link">
+            <a href="{{ url_for('index_page') }}">
+                <i class="bi bi-arrow-left"></i> Wróć do panelu głównego
+            </a>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

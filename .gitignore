@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+*.pyc
+temp_*
+venv
+.env
+users.db
+temp_uploads/
+.agents/
+.claude/
+.codex/
+.prodready/
+
+*.jsonl
+^.json
+doc/*
