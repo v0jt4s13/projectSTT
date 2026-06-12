@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Panel Transkrypcji STT</title>
-    <script>if (window.innerWidth < 768) { window.location.replace('/projectstt/mobile'); }</script>
+    <script>if (window.innerWidth < 768) { window.location.replace('{{ url_for("mobile_page") }}'); }</script>
     <style>
         :root {
             --bg-main: #0b0f19;
@@ -973,17 +973,9 @@
                 <div class="divider"></div>
 
                 <div class="tool-group">
-                    <label for="ytUrlInput" style="color: #f87171;">YouTube URL:</label>
-                    <input type="url" id="ytUrlInput" class="tool-group-input" placeholder="https://www.youtube.com/watch?v=...">
-                    <button id="ytProcessBtn" class="btn btn-danger" style="background-color: rgba(239, 68, 68, 0.2); border: 1px solid var(--danger); color: #f87171;">Przetwórz YT</button>
-                </div>
-
-                <div class="divider"></div>
-
-                <div class="tool-group">
-                    <label for="webUrlInput" style="color: var(--accent-blue);">URL strony:</label>
-                    <input type="url" id="webUrlInput" class="tool-group-input" placeholder="https://...">
-                    <button id="webProcessBtn" class="btn btn-secondary" style="border: 1px solid var(--accent-blue); color: var(--accent-blue);">Czytaj stronę</button>
+                    <label for="urlInput" id="urlLabel">URL:</label>
+                    <input type="url" id="urlInput" class="tool-group-input" placeholder="https://youtube.com/... lub https://...">
+                    <button id="urlProcessBtn" class="btn btn-secondary">Przetwórz</button>
                 </div>
 
                 <div class="divider"></div>
@@ -1106,10 +1098,9 @@
         const stopBtn = document.getElementById('stopBtn');
         const uploadBtn = document.getElementById('uploadBtn');
         const fileInput = document.getElementById('fileInput');
-        const ytUrlInput = document.getElementById('ytUrlInput');
-        const ytProcessBtn = document.getElementById('ytProcessBtn');
-        const webUrlInput = document.getElementById('webUrlInput');
-        const webProcessBtn = document.getElementById('webProcessBtn');
+        const urlInput = document.getElementById('urlInput');
+        const urlProcessBtn = document.getElementById('urlProcessBtn');
+        const urlLabel = document.getElementById('urlLabel');
         const status = document.getElementById('status');
         const spinner = document.getElementById('spinner');
         const usageSummary = document.getElementById('usageSummary');
@@ -2282,30 +2273,46 @@
             }
         });
 
-        ytProcessBtn.addEventListener('click', () => {
-            const ytUrl = ytUrlInput.value.trim();
-            if(!ytUrl) {
-                alert("Wklej poprawny link do filmu z YouTube!");
+        function isYoutubeUrl(url) {
+            return /^https?:\/\/(www\.|m\.)?(youtube\.com\/(watch|shorts|embed|live)|youtu\.be\/)/i.test(url);
+        }
+
+        function updateUrlInputStyle() {
+            const url = urlInput.value.trim();
+            if (isYoutubeUrl(url)) {
+                urlLabel.textContent = 'YouTube:';
+                urlLabel.style.color = '#f87171';
+                urlProcessBtn.textContent = 'Przetwórz YT';
+                urlProcessBtn.style.cssText = 'background-color: rgba(239,68,68,0.2); border: 1px solid var(--danger); color: #f87171;';
+            } else if (url) {
+                urlLabel.textContent = 'URL strony:';
+                urlLabel.style.color = 'var(--accent-blue)';
+                urlProcessBtn.textContent = 'Czytaj stronę';
+                urlProcessBtn.style.cssText = 'border: 1px solid var(--accent-blue); color: var(--accent-blue);';
+            } else {
+                urlLabel.textContent = 'URL:';
+                urlLabel.style.color = '';
+                urlProcessBtn.textContent = 'Przetwórz';
+                urlProcessBtn.style.cssText = '';
+            }
+        }
+
+        urlInput.addEventListener('input', updateUrlInputStyle);
+
+        urlProcessBtn.addEventListener('click', () => {
+            const url = urlInput.value.trim();
+            if (!url) {
+                alert("Wklej adres URL!");
                 return;
             }
             toggleChatAccess(false);
-
-            startSmartCountdown(60);
-            sendAudio(null, '', '', ytUrl);
-        });
-
-        webProcessBtn.addEventListener('click', () => {
-            const webUrl = webUrlInput.value.trim();
-            if (!webUrl) {
-                alert("Wklej poprawny adres URL strony!");
-                return;
+            if (isYoutubeUrl(url)) {
+                startSmartCountdown(60);
+                sendAudio(null, '', '', url);
+            } else {
+                setStatus("Pobieranie treści strony...", true);
+                sendAudio(null, '', '', '', url);
             }
-            toggleChatAccess(false);
-
-            const customName = prompt("Podaj przyjazną nazwę dla tej strony w historii:", webUrl);
-            if (customName !== null) currentDocumentName = customName || webUrl;
-            setStatus("Pobieranie treści strony...", true);
-            sendAudio(null, '', customName || '', '', webUrl);
         });
 
         chatSendBtn.addEventListener('click', async () => {
