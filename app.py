@@ -774,7 +774,15 @@ def build_youtube_download_options(download_token):
         'outtmpl': os.path.join(UPLOAD_FOLDER, f'{download_token}_%(id)s.%(ext)s'),
         'quiet': True,
         'noplaylist': True,
-        'overwrites': True
+        'overwrites': True,
+        # iOS client bypasses n-challenge entirely; web_creator as secondary fallback
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['ios', 'web_creator'],
+            }
+        },
+        # download EJS solver from GitHub if n-challenge is still needed
+        'remote_components': 'ejs:github',
     }
 
     deno_path = find_deno_runtime()
@@ -788,23 +796,32 @@ def make_temp_upload_path(filename):
     return os.path.join(UPLOAD_FOLDER, f"{uuid.uuid4().hex}_{safe_name}")
 
 def resolve_youtube_download_path(ydl, info, download_token):
-    prepared_path = ydl.prepare_filename(info)
-    candidates = [prepared_path]
+    candidates = []
 
     for download in info.get("requested_downloads") or []:
-        filepath = download.get("filepath")
-        if filepath:
-            candidates.append(filepath)
+        for key in ("filepath", "filename"):
+            p = download.get(key)
+            if p:
+                candidates.append(p)
+
+    prepared_path = ydl.prepare_filename(info)
+    if prepared_path:
+        candidates.append(prepared_path)
 
     video_id = info.get("id")
     if video_id:
         candidates.extend(glob.glob(os.path.join(UPLOAD_FOLDER, f"{download_token}_{video_id}.*")))
 
+    candidates.extend(glob.glob(os.path.join(UPLOAD_FOLDER, f"{download_token}_*")))
+
     for candidate in candidates:
         if candidate and os.path.exists(candidate):
             return candidate
 
-    raise FileNotFoundError(f"Nie znaleziono pobranego pliku YouTube dla tokenu {download_token}")
+    raise FileNotFoundError(
+        f"Nie znaleziono pobranego pliku YouTube dla tokenu {download_token}. "
+        f"Szukano w: {candidates}"
+    )
 
 def download_youtube_audio(youtube_url):
     download_token = uuid.uuid4().hex
@@ -1554,6 +1571,9 @@ def transcribe():
             display_title = custom_name if custom_name else file.filename
     except Exception as e:
         print(f"Error during file handling or content fetching: {e}")
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+        return jsonify({"error": str(e)}), 400
 
     try:
         # Obsługa transkrypcji strony internetowej lub z pliku tekstowego bez STT
