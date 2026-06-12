@@ -1088,6 +1088,7 @@
     /* ═══════════════════════════════════════════
        CONSTANTS FROM FLASK CONTEXT
     ═══════════════════════════════════════════ */
+    const BASE                 = {{ request.script_root | tojson }};
     const LOCAL_MODELS_ENABLED = {{ 'true' if local_models_enabled else 'false' }};
     const DEFAULT_CHAT_LABEL   = {{ (default_chat_model_label or '')|tojson }};
 
@@ -1259,7 +1260,7 @@
         setProcessing(true);
 
         try {
-            const res  = await fetch('/transcribe', { method: 'POST', body: formData });
+            const res  = await fetch(BASE + '/transcribe', { method: 'POST', body: formData });
             const data = await res.json();
 
             if (data.text) {
@@ -1408,7 +1409,7 @@
 
         try {
             const chatModelId = document.getElementById('sel-chat-model').value;
-            const res  = await fetch('/ask-question', {
+            const res  = await fetch(BASE + '/ask-question', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: activeRecordId, question: q, chat_model_id: chatModelId })
@@ -1521,7 +1522,7 @@
         list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
 
         try {
-            const res  = await fetch('/get-history');
+            const res  = await fetch(BASE + '/get-history');
             const data = await res.json();
 
             if (!data.length) {
@@ -1580,7 +1581,7 @@
     async function delHistItem(id, event) {
         event.stopPropagation();
         if (!confirm('Usunąć ten wpis z historii?')) return;
-        const res = await fetch(`/delete-history/${id}`, { method: 'DELETE' });
+        const res = await fetch(`${BASE}/delete-history/${id}`, { method: 'DELETE' });
         if (res.ok) {
             if (activeRecordId === id) {
                 activeRecordId = null;
@@ -1609,7 +1610,7 @@
             return;
         }
 
-        document.getElementById('export-form').action    = `/export/${fmt}`;
+        document.getElementById('export-form').action    = `${BASE}/export/${fmt}`;
         document.getElementById('export-content').value  = content;
         document.getElementById('export-title').value    = title;
         document.getElementById('export-form').submit();

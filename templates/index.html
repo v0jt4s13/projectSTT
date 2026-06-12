@@ -1082,6 +1082,7 @@
     </form>
 
     <script>
+        const BASE = {{ request.script_root | tojson }};
         let mediaRecorder;
         let audioChunks = [];
         let audioCtx;
@@ -2027,7 +2028,7 @@
         async function loadHistoryFromServer() {
             historyList.innerHTML = "<p style='color: var(--text-muted); font-size: 13px;'>Ładowanie historii...</p>";
             try {
-                const response = await fetch('/get-history');
+                const response = await fetch(BASE + '/get-history');
                 const data = await response.json();
                 
                 if (response.ok) {
@@ -2069,7 +2070,7 @@
             if (!confirm("Czy na pewno chcesz trwale usunąć to nagranie z historii?")) return;
 
             try {
-                const response = await fetch(`/delete-history/${id}`, { method: 'DELETE' });
+                const response = await fetch(`${BASE}/delete-history/${id}`, { method: 'DELETE' });
                 if (response.ok) {
                     if(activeRecordId === id) toggleChatAccess(false);
                     await loadHistoryFromServer(); 
@@ -2131,7 +2132,7 @@
                 const contentInput = document.getElementById('exportContent');
                 const titleInput = document.getElementById('exportTitle');
                 
-                form.action = `/export/${format}`;
+                form.action = `${BASE}/export/${format}`;
                 contentInput.value = content;
                 titleInput.value = fullTitle;
                 form.submit();
@@ -2324,7 +2325,7 @@
             chatResponse.innerHTML = "<span style='color: var(--warning);'>Generowanie odpowiedzi przez AI...</span>";
 
             try {
-                const response = await fetch('/ask-question', {
+                const response = await fetch(BASE + '/ask-question', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -2425,7 +2426,7 @@
             
             try {
                 const processingStartedAt = performance.now();
-                const response = await fetch('/transcribe', {
+                const response = await fetch(BASE + '/transcribe', {
                     method: 'POST',
                     body: formData
                 });
