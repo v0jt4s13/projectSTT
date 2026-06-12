@@ -874,6 +874,10 @@ Na końcu udzielonej odpowiedzi wypisz adresy url, na podstawie których został
         "Na podstawie treści napisz gotowy prompt weryfikacyjny w poniższym formacie JSON:\n"
         f"{verification_json_format}\n\n"
         f"PAMIĘTAJ: {how_to_use_web_search_prompt}\n"
+        "### WYNIK AUTENTYCZNOŚCI\n"
+        "Oceń wiarygodność treści w skali 0-100 i zwróć WYŁĄCZNIE poniższy JSON (bez dodatkowego tekstu):\n"
+        "{\"authenticity_score\": N}\n"
+        "N=100 oznacza treść w pełni wiarygodną, N=0 oznacza treść fałszywą lub niemożliwą do zweryfikowania.\n\n"
         f"Oto tekst do przeanalizowania:\n{raw_text}"
     )
 
@@ -920,6 +924,15 @@ Na końcu udzielonej odpowiedzi wypisz adresy url, na podstawie których został
     # )
 
 # Funkcja generująca notatki AI na podstawie transkrypcji audio
+def extract_authenticity_score(notes_text):
+    if not notes_text:
+        return None
+    match = re.search(r'"authenticity_score"\s*:\s*(\d+)', notes_text)
+    if not match:
+        return None
+    return max(0, min(100, int(match.group(1))))
+
+
 def generate_audio_notes(raw_text, processing_mode, preferred_provider=None, model_used=None):
     # print(f"[generate_audio_notes] START => raw_text len: {len(raw_text)}, processing_mode: {processing_mode}, preferred_provider: {preferred_provider}, model_used: {model_used}")
     if not raw_text.strip():
@@ -1615,7 +1628,7 @@ def transcribe():
             new_id = None
 
         return jsonify({
-            "text": surowy_tekst, 
+            "text": surowy_tekst,
             "notes": notatki_ai,
             "notes_model_used": notes_model_used,
             "model_used": model_used_info,
@@ -1623,7 +1636,8 @@ def transcribe():
             "task": task,
             "saved_name": display_title,
             "record_id": new_id,
-            "openai_usage_history": openai_usage_history
+            "openai_usage_history": openai_usage_history,
+            "authenticity_score": extract_authenticity_score(notatki_ai),
         })
 
     except ValueError as e:
@@ -1738,6 +1752,7 @@ def api_youtube_transcribe():
             "saved_name": saved_name,
             "record_id": record_id,
             "openai_usage_history": openai_usage_history,
+            "authenticity_score": extract_authenticity_score(transcription_result["notes"]),
             "youtube": {
                 "id": youtube_download["id"],
                 "title": youtube_download["title"],
@@ -1832,6 +1847,7 @@ def api_webpage_read():
             "saved_name": saved_name,
             "record_id": record_id,
             "openai_usage_history": openai_usage_history,
+            "authenticity_score": extract_authenticity_score(notes),
             "webpage": {
                 "url": url,
                 "title": web_title
@@ -2029,7 +2045,8 @@ def get_history():
             "openai_usage_history": parse_openai_usage_history(r[5]),
             "created_at": r[6],
             "chat_messages": chat_messages,
-            "chat_count": len(chat_messages)
+            "chat_count": len(chat_messages),
+            "authenticity_score": extract_authenticity_score(r[3]),
         })
     return jsonify(history_list)
 

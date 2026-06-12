@@ -585,8 +585,12 @@
             font-size: 14px; font-weight: 600; color: var(--text-primary);
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
-        .hist-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+        .hist-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; justify-content: space-between;}
         .hist-chat-count { font-size: 11px; color: var(--amber); margin-top: 2px; }
+        .auth-bar { display: inline-block; width: 80px; height: 7px; border-radius: 4px; overflow: hidden; background: var(--red); flex-shrink: 0; vertical-align: middle; }
+        .auth-bar-fill { display: block; height: 100%; border-radius: 4px 0 0 4px; }
+        .auth-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+        .auth-label--bad { color: var(--red); }
         .hist-del {
             background: none; border: none; color: var(--red);
             font-size: 16px; cursor: pointer; padding: 8px;
@@ -1099,6 +1103,16 @@
     let docName           = 'Transkrypcja';
     let currentTranscription = '';
     let currentNotes         = '';
+    let currentAuthScore     = null;
+
+    function renderAuthBar(score) {
+        if (score == null) return '';
+        const remaining = 100 - score;
+        const fill = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--amber)' : 'var(--red)';
+        return `<span class="auth-label">${score}% wiarygodne</span>`
+             + `<span class="auth-bar"><span class="auth-bar-fill" style="width:${score}%;background:${fill};"></span></span>`
+             + `<span class="auth-label auth-label--bad">${remaining}% niewiarygodne</span>`;
+    }
     let chatMessages         = [];
     let selectedSrc          = null;
     let selectedFileObj      = null;
@@ -1268,6 +1282,7 @@
                 currentNotes         = (data.notes || '').trim();
                 docName              = data.saved_name || docName;
                 activeRecordId       = data.record_id  || null;
+                currentAuthScore     = data.authenticity_score ?? null;
 
                 refreshDashCards();
                 refreshTranscScreen();
@@ -1310,7 +1325,13 @@
 
         const nSub = document.getElementById('dash-notes-sub');
         if (currentNotes) {
-            nSub.textContent = clamp(currentNotes.replace(/#+\s*/g,''), 62);
+            if (currentAuthScore != null) {
+                nSub.innerHTML = renderAuthBar(currentAuthScore);
+                nSub.style.cssText = 'display:flex;align-items:center;gap:6px;overflow:visible;white-space:nowrap;';
+            } else {
+                nSub.textContent = clamp(currentNotes.replace(/#+\s*/g,''), 62);
+                nSub.style.cssText = '';
+            }
             nSub.classList.remove('card-sub--italic');
         }
 
@@ -1543,7 +1564,7 @@
                 el.innerHTML = `
                     <div class="hist-info">
                         <div class="hist-title">${esc(item.filename)}</div>
-                        <div class="hist-meta">${esc(item.created_at)}</div>
+                        <div class="hist-meta">${esc(item.created_at)}${renderAuthBar(item.authenticity_score ?? null)}</div>
                         ${chatInfo}
                     </div>
                     <button class="hist-del" aria-label="Usuń">🗑️</button>
@@ -1562,6 +1583,7 @@
         currentNotes         = item.ai_notes  || '';
         docName              = item.filename  || 'Transkrypcja';
         activeRecordId       = item.id;
+        currentAuthScore     = item.authenticity_score ?? null;
 
         refreshDashCards();
         refreshTranscScreen();
