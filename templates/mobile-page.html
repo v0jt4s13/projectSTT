@@ -44,7 +44,10 @@
             color: var(--text-primary);
             -webkit-text-size-adjust: 100%;
         }
-
+        a {
+            color: darkturquoise;
+        }
+        
         /* ═══════════════════════════════════════
            APP WRAPPER
         ═══════════════════════════════════════ */
@@ -582,11 +585,25 @@
         .hist-item:active { background: rgba(255,255,255,0.05); }
         .hist-info { flex: 1; min-width: 0; }
         .hist-title {
-            font-size: 14px; font-weight: 600; color: var(--text-primary);
+            display: flex;
+            font-size: 12px; font-weight: 600; color: var(--text-primary);
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            padding: 0 0 6px 0;
         }
-        .hist-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; justify-content: space-between;}
-        .hist-chat-count { font-size: 11px; color: var(--amber); margin-top: 2px; }
+        .hist-meta { 
+            font-size: 11px; color: var(--text-muted); 
+            margin: 0 2rem; display: flex; 
+            align-items: center; gap: 8px; flex-wrap: nowrap; justify-content: center;
+        }
+        .hist-meta-data {
+            width: fit-content;
+            margin-right: 0.7rem;
+        }
+        .hist-chat-count { 
+            font-size: 11px; 
+            color: var(--amber); 
+            margin-top: 6px; 
+        }
         .auth-bar { display: inline-block; width: 80px; height: 7px; border-radius: 4px; overflow: hidden; background: var(--red); flex-shrink: 0; vertical-align: middle; }
         .auth-bar-fill { display: block; height: 100%; border-radius: 4px 0 0 4px; }
         .auth-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
@@ -1596,8 +1613,13 @@
 
                 el.innerHTML = `
                     <div class="hist-info">
-                        <div class="hist-title">${esc(item.filename)}</div>
-                        <div class="hist-meta">${esc(item.created_at)}${renderAuthBar(item.authenticity_score ?? null)}</div>
+                        <div class="hist-title">
+                            <div class="hist-meta-data">${esc(item.created_at).slice(0, 16)}</div>
+                            ${esc(item.filename)}
+                        </div>
+                        <div class="hist-meta">
+                            ${renderAuthBar(item.authenticity_score ?? null)}
+                        </div>
                         ${(()=>{ let v=null; for(const m of (item.chat_messages||[])) if(m.role==='assistant'){const x=extractChatAuthScore(m.content);if(x!=null)v=x;} return v!=null?`<div class="hist-meta" style="margin-top:2px;">${renderAuthBar(v)}</div>`:''; })()}
                         ${chatInfo}
                     </div>
