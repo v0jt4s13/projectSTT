@@ -591,6 +591,7 @@
         .auth-bar-fill { display: block; height: 100%; border-radius: 4px 0 0 4px; }
         .auth-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
         .auth-label--bad { color: var(--red); }
+        @media (max-width: 500px) { .auth-txt { display: none; } }
         .hist-del {
             background: none; border: none; color: var(--red);
             font-size: 16px; cursor: pointer; padding: 8px;
@@ -1103,15 +1104,33 @@
     let docName           = 'Transkrypcja';
     let currentTranscription = '';
     let currentNotes         = '';
-    let currentAuthScore     = null;
+    let currentNotesAuthScore = null;
+    let currentChatAuthScore  = null;
 
     function renderAuthBar(score) {
         if (score == null) return '';
         const remaining = 100 - score;
         const fill = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--amber)' : 'var(--red)';
-        return `<span class="auth-label">${score}% wiarygodne</span>`
+        return `<span class="auth-label"><span class="auth-pct">${score}%</span><span class="auth-txt"> wiarygodne</span></span>`
              + `<span class="auth-bar"><span class="auth-bar-fill" style="width:${score}%;background:${fill};"></span></span>`
-             + `<span class="auth-label auth-label--bad">${remaining}% niewiarygodne</span>`;
+             + `<span class="auth-label auth-label--bad"><span class="auth-pct">${remaining}%</span><span class="auth-txt"> niewiarygodne</span></span>`;
+    }
+
+    function extractChatAuthScore(text) {
+        const m = text && text.match(/"authenticity_score"\s*:\s*(\d+)/);
+        return m ? Math.min(100, Math.max(0, parseInt(m[1], 10))) : null;
+    }
+
+    function getBestAuthScore(item) {
+        // Preferuj najnowszy wynik z czatu (oparty na web_search) nad wynikiem z ai_notes
+        let chatScore = null;
+        for (const m of (item.chat_messages || [])) {
+            if (m.role === 'assistant') {
+                const s = extractChatAuthScore(m.content);
+                if (s != null) chatScore = s;
+            }
+        }
+        return chatScore ?? (item.authenticity_score ?? null);
     }
     let chatMessages         = [];
     let selectedSrc          = null;
@@ -1282,7 +1301,8 @@
                 currentNotes         = (data.notes || '').trim();
                 docName              = data.saved_name || docName;
                 activeRecordId       = data.record_id  || null;
-                currentAuthScore     = data.authenticity_score ?? null;
+                currentNotesAuthScore = data.authenticity_score ?? null;
+                currentChatAuthScore  = null;
 
                 refreshDashCards();
                 refreshTranscScreen();
@@ -1325,8 +1345,9 @@
 
         const nSub = document.getElementById('dash-notes-sub');
         if (currentNotes) {
-            if (currentAuthScore != null) {
-                nSub.innerHTML = renderAuthBar(currentAuthScore);
+            const bestScore = currentNotesAuthScore ?? currentChatAuthScore;
+            if (bestScore != null) {
+                nSub.innerHTML = renderAuthBar(bestScore);
                 nSub.style.cssText = 'display:flex;align-items:center;gap:6px;overflow:visible;white-space:nowrap;';
             } else {
                 nSub.textContent = clamp(currentNotes.replace(/#+\s*/g,''), 62);
@@ -1399,10 +1420,14 @@
         return m ? readJsonStringValue(m[1]) : '';
     }
 
+    const AUTH_SCORE_SUFFIX = '\n\n### WYNIK AUTENTYCZNOŚCI\nPo zakończeniu analizy dołącz na samym końcu odpowiedzi ocenę wiarygodności jako JSON:\n{"authenticity_score": N}\ngdzie N to liczba 0-100 (100 = w pełni wiarygodne, 0 = fałszywe lub nieweryfikowalne).';
+    let pendingAuthScore = false;
+
     function populateChatInputFromAuthenticityPrompt() {
         const prompt = extractAuthenticityPrompt(currentNotes);
         if (!prompt) return false;
         document.getElementById('chat-input').value = prompt;
+        pendingAuthScore = true;
         return true;
     }
 
@@ -1428,18 +1453,26 @@
         appendBubble('user', q);
         const loader = appendBubble('ai', '…', true);
 
+        const questionForBackend = pendingAuthScore ? q + AUTH_SCORE_SUFFIX : q;
+        pendingAuthScore = false;
+
         try {
             const chatModelId = document.getElementById('sel-chat-model').value;
             const res  = await fetch(BASE + '/ask-question', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: activeRecordId, question: q, chat_model_id: chatModelId })
+                body: JSON.stringify({ id: activeRecordId, question: questionForBackend, chat_model_id: chatModelId })
             });
             const data = await res.json();
             loader.remove();
 
             if (data.answer) {
-                appendBubble('ai', data.answer);
+                const chatScore = data.authenticity_score ?? null;
+                if (chatScore != null) {
+                    currentChatAuthScore = chatScore;
+                    refreshDashCards();
+                }
+                appendBubble('ai', data.answer, false, chatScore);
                 chatMessages.push({ role: 'user', content: q });
                 chatMessages.push({ role: 'assistant', content: data.answer, engine: data.engine });
 
@@ -1495,7 +1528,7 @@
         return html;
     }
 
-    function appendBubble(role, text, loading = false) {
+    function appendBubble(role, text, loading = false, score = null) {
         const feed  = document.getElementById('chat-feed');
         const empty = document.getElementById('chat-empty');
         if (empty) empty.style.display = 'none';
@@ -1506,7 +1539,7 @@
         if (role !== 'user' && !loading) {
             const hdr = document.createElement('div');
             hdr.className = 'bubble-header';
-            hdr.textContent = '🤖 AI';
+            hdr.innerHTML = '🤖 AI' + (score != null ? '&nbsp;' + renderAuthBar(score) : '');
             wrap.appendChild(hdr);
         }
 
@@ -1565,6 +1598,7 @@
                     <div class="hist-info">
                         <div class="hist-title">${esc(item.filename)}</div>
                         <div class="hist-meta">${esc(item.created_at)}${renderAuthBar(item.authenticity_score ?? null)}</div>
+                        ${(()=>{ let v=null; for(const m of (item.chat_messages||[])) if(m.role==='assistant'){const x=extractChatAuthScore(m.content);if(x!=null)v=x;} return v!=null?`<div class="hist-meta" style="margin-top:2px;">${renderAuthBar(v)}</div>`:''; })()}
                         ${chatInfo}
                     </div>
                     <button class="hist-del" aria-label="Usuń">🗑️</button>
@@ -1583,7 +1617,13 @@
         currentNotes         = item.ai_notes  || '';
         docName              = item.filename  || 'Transkrypcja';
         activeRecordId       = item.id;
-        currentAuthScore     = item.authenticity_score ?? null;
+        currentNotesAuthScore = item.authenticity_score ?? null;
+        currentChatAuthScore  = (() => {
+            let s = null;
+            for (const m of (item.chat_messages || []))
+                if (m.role === 'assistant') { const v = extractChatAuthScore(m.content); if (v != null) s = v; }
+            return s;
+        })();
 
         refreshDashCards();
         refreshTranscScreen();
@@ -1593,7 +1633,10 @@
         if (item.chat_messages && item.chat_messages.length) {
             chatMessages = item.chat_messages;
             document.getElementById('chat-feed').innerHTML = '';
-            item.chat_messages.forEach(m => appendBubble(m.role, m.content));
+            item.chat_messages.forEach(m => {
+                const s = m.role === 'assistant' ? extractChatAuthScore(m.content) : null;
+                appendBubble(m.role, m.content, false, s);
+            });
         }
 
         closeOverlay('ov-history');

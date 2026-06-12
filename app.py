@@ -2001,7 +2001,8 @@ def ask_question():
             "engine": ai_answer["engine"],
             "chat_model_used": ai_answer["engine"],
             "sources": ai_answer["sources"],
-            "openai_usage_history": openai_usage_history
+            "openai_usage_history": openai_usage_history,
+            "authenticity_score": extract_authenticity_score(odpowiedz_ai),
         })
     except Exception as e:
         app.logger.exception(
