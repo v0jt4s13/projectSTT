@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>STT Panel</title>
@@ -677,6 +678,7 @@
             overflow: hidden; text-overflow: ellipsis;
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
 </head>
 <body>
 <div id="app">
@@ -1111,6 +1113,9 @@
        CONSTANTS FROM FLASK CONTEXT
     ═══════════════════════════════════════════ */
     const BASE                 = {{ request.script_root | tojson }};
+    function getCsrfToken() {
+        return document.querySelector('meta[name="csrf-token"]').content;
+    }
     const LOCAL_MODELS_ENABLED = {{ 'true' if local_models_enabled else 'false' }};
     const DEFAULT_CHAT_LABEL   = {{ (default_chat_model_label or '')|tojson }};
 
@@ -1310,7 +1315,7 @@
         setProcessing(true);
 
         try {
-            const res  = await fetch(BASE + '/transcribe', { method: 'POST', body: formData });
+            const res  = await fetch(BASE + '/transcribe', { method: 'POST', headers: {'X-CSRFToken': getCsrfToken()}, body: formData });
             const data = await res.json();
 
             if (data.text) {
@@ -1477,7 +1482,7 @@
             const chatModelId = document.getElementById('sel-chat-model').value;
             const res  = await fetch(BASE + '/ask-question', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
                 body: JSON.stringify({ id: activeRecordId, question: questionForBackend, chat_model_id: chatModelId })
             });
             const data = await res.json();
@@ -1566,7 +1571,7 @@
         } else if (role === 'user') {
             body.textContent = text;
         } else {
-            body.innerHTML = formatAiText(text);
+            body.innerHTML = DOMPurify.sanitize(formatAiText(text));
         }
         wrap.appendChild(body);
 
@@ -1588,21 +1593,28 @@
     /* ═══════════════════════════════════════════
        HISTORY
     ═══════════════════════════════════════════ */
-    async function loadHistory() {
+    let histOffset = 0;
+
+    async function loadHistory(append = false) {
         const list = document.getElementById('hist-list');
-        list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
+        if (!append) {
+            histOffset = 0;
+            list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
+        }
 
         try {
-            const res  = await fetch(BASE + '/get-history');
+            const res  = await fetch(`${BASE}/get-history?offset=${histOffset}`, {headers: {'X-CSRFToken': getCsrfToken()}});
             const data = await res.json();
+            const { items, total, limit } = data;
 
-            if (!data.length) {
+            if (!append) list.innerHTML = '';
+
+            if (!items.length && !append) {
                 list.innerHTML = '<div class="empty-state"><span class="empty-icon">🕒</span><span class="empty-text">Brak zapisanych transkrypcji.</span></div>';
                 return;
             }
 
-            list.innerHTML = '';
-            data.forEach(item => {
+            items.forEach(item => {
                 const el = document.createElement('div');
                 el.className = 'hist-item';
 
@@ -1629,6 +1641,17 @@
                 el.querySelector('.hist-del').addEventListener('click', (e) => delHistItem(item.id, e));
                 list.appendChild(el);
             });
+
+            document.getElementById('hist-load-more')?.remove();
+            histOffset += items.length;
+            if (histOffset < total) {
+                const moreBtn = document.createElement('button');
+                moreBtn.id = 'hist-load-more';
+                moreBtn.className = 'hist-load-more-btn';
+                moreBtn.textContent = `Pokaż więcej (${total - histOffset} pozostało)`;
+                moreBtn.addEventListener('click', () => loadHistory(true));
+                list.appendChild(moreBtn);
+            }
         } catch {
             list.innerHTML = '<div class="empty-state"><span class="empty-text" style="color:var(--red);">Błąd ładowania historii.</span></div>';
         }
@@ -1668,7 +1691,7 @@
     async function delHistItem(id, event) {
         event.stopPropagation();
         if (!confirm('Usunąć ten wpis z historii?')) return;
-        const res = await fetch(`${BASE}/delete-history/${id}`, { method: 'DELETE' });
+        const res = await fetch(`${BASE}/delete-history/${id}`, { method: 'DELETE', headers: {'X-CSRFToken': getCsrfToken()} });
         if (res.ok) {
             if (activeRecordId === id) {
                 activeRecordId = null;

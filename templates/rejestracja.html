@@ -150,7 +150,7 @@
         {% endwith %}
 
         <form action="{{ url_for('register') }}" method="POST">
-            
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="row g-3 mb-3">
                 <div class="col-sm-6">
                     <label for="first_name" class="form-label">Imię</label>

@@ -614,6 +614,7 @@
 
             <div class="section-body">
             <form action="{{ url_for('add_model') }}" method="POST" class="model-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="field">
                     <label for="provider">Provider</label>
                     <select id="provider" name="provider" required>
@@ -664,6 +665,7 @@
             {% if models %}
                 {% for model in models %}
                     <form action="{{ url_for('update_model', model_pk=model.id) }}" method="POST" class="model-editor">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <div class="field">
                             <label for="provider_{{ model.id }}">Provider</label>
                             <select id="provider_{{ model.id }}" name="provider" required>

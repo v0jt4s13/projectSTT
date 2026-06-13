@@ -8,10 +8,15 @@ import io
 import platform
 import shutil
 import socket
+import ipaddress
 import glob
 import uuid
 from datetime import datetime, timezone
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file, g, has_request_context
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from flask_talisman import Talisman
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -80,7 +85,58 @@ from models_config import (
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.logger.setLevel(logging.INFO)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'super-tajny-klucz-do-sesji-praktyki')
+_secret_key = os.getenv('FLASK_SECRET_KEY')
+if not _secret_key:
+    raise RuntimeError(
+        "FLASK_SECRET_KEY nie jest ustawiony. "
+        "Wygeneruj klucz: python -c \"import secrets; print(secrets.token_hex(32))\" "
+        "i dodaj go do pliku .env lub zmiennych środowiskowych."
+    )
+app.secret_key = _secret_key
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV', 'development') == 'production'
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri="memory://",
+)
+csrf = CSRFProtect(app)
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    return jsonify({"error": "Nieprawidłowy token CSRF. Odśwież stronę i spróbuj ponownie."}), 400
+
+@app.errorhandler(413)
+def handle_too_large(e):
+    return jsonify({"error": f"Plik jest zbyt duży. Maksymalny rozmiar to {_max_mb} MB."}), 413
+
+_is_production = os.getenv('FLASK_ENV', 'development') == 'production'
+Talisman(
+    app,
+    force_https=_is_production,
+    strict_transport_security=_is_production,
+    session_cookie_secure=_is_production,
+    content_security_policy={
+        'default-src': "'self'",
+        'script-src':  "'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+        'style-src':   "'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+        'font-src':    "'self' https://cdn.jsdelivr.net",
+        'img-src':     "'self' data: blob:",
+        'media-src':   "'self' blob:",
+        'connect-src': "'self'",
+        'frame-ancestors': "'none'",
+    },
+    content_security_policy_nonce_in=['script-src'],
+    referrer_policy='strict-origin-when-cross-origin',
+    feature_policy={
+        'microphone': "'self'",
+        'camera': "'none'",
+        'geolocation': "'none'",
+    },
+)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'temp_uploads')
@@ -92,6 +148,25 @@ OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini').strip() or 'gpt-4o-mini'
 OPENAI_WEB_SEARCH_MODEL = os.getenv('OPENAI_WEB_SEARCH_MODEL', OPENAI_MODEL).strip() or OPENAI_MODEL
 OPENAI_TRANSCRIBE_MODEL = os.getenv('OPENAI_TRANSCRIBE_MODEL', 'gpt-4o-mini-transcribe').strip() or 'gpt-4o-mini-transcribe'
 OPENAI_USAGE_HISTORY_FILE = os.path.join(BASE_DIR, 'openai_usage_history.jsonl')
+
+_max_mb = int(os.getenv('MAX_UPLOAD_MB', '200'))
+app.config['MAX_CONTENT_LENGTH'] = _max_mb * 1024 * 1024
+
+ALLOWED_AUDIO_EXTENSIONS = {
+    'wav', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'webm', 'ogg', 'flac', 'aac', 'opus', 'txt'
+}
+
+def validate_password_strength(password):
+    """Returns error message string or None if password is strong enough."""
+    if not password or len(password) < 8:
+        return 'Hasło musi mieć co najmniej 8 znaków.'
+    if not any(c.isupper() for c in password):
+        return 'Hasło musi zawierać co najmniej jedną wielką literę.'
+    if not any(c.isdigit() for c in password):
+        return 'Hasło musi zawierać co najmniej jedną cyfrę.'
+    if not any(c in '!@#$%^&*(),.?":{}|<>' for c in password):
+        return 'Hasło musi zawierać co najmniej jeden znak specjalny (!@#$%^&*...).'
+    return None
 
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
@@ -823,7 +898,41 @@ def resolve_youtube_download_path(ydl, info, download_token):
         f"Szukano w: {candidates}"
     )
 
+_YOUTUBE_RE = re.compile(
+    r'^https?://(www\.|m\.)?(youtube\.com/(watch|shorts|embed|live)|youtu\.be/)',
+    re.IGNORECASE,
+)
+
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network(cidr) for cidr in (
+        "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+        "169.254.0.0/16", "0.0.0.0/8", "100.64.0.0/10",
+        "::1/128", "fc00::/7", "fe80::/10",
+    )
+]
+
+def _assert_safe_url(url):
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        raise ValueError(f"Niedozwolony protokół URL: '{parsed.scheme}'")
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("Brak nazwy hosta w URL")
+    try:
+        resolved_ip = socket.gethostbyname(hostname)
+        ip = ipaddress.ip_address(resolved_ip)
+    except socket.gaierror:
+        raise ValueError(f"Nie można rozwiązać nazwy hosta: {hostname}")
+    if any(ip in net for net in _PRIVATE_NETWORKS) or ip.is_loopback or ip.is_reserved:
+        raise ValueError(f"Adres URL wskazuje na wewnętrzną sieć — niedozwolone")
+
+def _assert_youtube_url(url):
+    if not _YOUTUBE_RE.match(url):
+        raise ValueError("URL nie jest poprawnym adresem YouTube (youtube.com lub youtu.be)")
+
 def download_youtube_audio(youtube_url):
+    _assert_youtube_url(youtube_url)
     download_token = uuid.uuid4().hex
     ydl_opts = build_youtube_download_options(download_token)
 
@@ -838,6 +947,7 @@ def download_youtube_audio(youtube_url):
         }
 
 def fetch_webpage_content(url):
+    _assert_safe_url(url)
     headers = {'User-Agent': 'Mozilla/5.0 (compatible; projectSTT/1.0)'}
     response = requests.get(url, timeout=30, headers=headers)
     response.raise_for_status()
@@ -1234,6 +1344,7 @@ else:
     models = {}
 
 @app.route('/', methods=['GET', 'POST'])
+@limiter.limit("20 per minute; 5 per second")
 def login():
     if 'user_email' in session:
         return redirect(url_for('index_page'))
@@ -1258,6 +1369,7 @@ def login():
     return render_template('login-page.html')
 
 @app.route('/register', methods=['GET', 'POST'])
+@limiter.limit("10 per hour; 3 per minute")
 def register():
     if 'user_email' in session:
         return redirect(url_for('index_page'))
@@ -1273,17 +1385,9 @@ def register():
             flash('Podaj poprawny adres e-mail (np. nazwa@domena.pl).', 'danger')
             return render_template('rejestracja.html')
             
-        if len(password) < 8:
-            flash('Hasło musi mieć co najmniej 8 znaków.', 'danger')
-            return render_template('rejestracja.html')
-        if not any(char.isupper() for char in password):
-            flash('Hasło musi zawierać co najmniej jedną wielką literę.', 'danger')
-            return render_template('rejestracja.html')
-        if not any(char.isdigit() for char in password):
-            flash('Hasło musi zawierać co najmniej jedną cyfrę.', 'danger')
-            return render_template('rejestracja.html')
-        if not any(char in '!@#$%^&*(),.?":{}|<>' for char in password):
-            flash('Hasło musi zawierać co najmniej jeden znak specjalny.', 'danger')
+        pwd_error = validate_password_strength(password)
+        if pwd_error:
+            flash(pwd_error, 'danger')
             return render_template('rejestracja.html')
         
         conn = sqlite3.connect(DB_FILE)
@@ -1533,6 +1637,7 @@ def update_model(model_pk):
     return redirect(url_for('settings'))
 
 @app.route('/transcribe', methods=['POST'])
+@limiter.limit("30 per hour; 5 per minute")
 def transcribe():
     # print(f"[API /transcribe] Request received with form data: {request.form} and files: {request.files}")
     if 'user_email' not in session:
@@ -1565,7 +1670,10 @@ def transcribe():
             file = request.files['file']
             if file.filename == '':
                 return jsonify({"error": "Nie wybrano pliku"}), 400
-                
+            ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+            if ext not in ALLOWED_AUDIO_EXTENSIONS:
+                return jsonify({"error": f"Niedozwolony typ pliku '.{ext}'. Akceptowane: {', '.join(sorted(ALLOWED_AUDIO_EXTENSIONS))}"}), 400
+
             file_path = make_temp_upload_path(file.filename)
             file.save(file_path)
             display_title = custom_name if custom_name else file.filename
@@ -1698,6 +1806,7 @@ def api_models():
     })
 
 @app.route('/api/youtube/transcribe', methods=['POST'])
+@limiter.limit("10 per hour; 2 per minute")
 def api_youtube_transcribe():
     # print(f"[API /api/youtube/transcribe] Request received with JSON: {request.get_json(silent=True)}")
     if 'user_email' not in session:
@@ -1881,6 +1990,7 @@ def api_webpage_read():
 
 
 @app.route('/ask-question', methods=['POST'])
+@limiter.limit("60 per hour; 10 per minute")
 def ask_question():
     # print(f"[API /ask-question] Request received with JSON: {request.get_json(silent=True)}")
     user_email = session.get('user_email')
@@ -2013,35 +2123,53 @@ def ask_question():
         )
         return jsonify({"error": f"Błąd AI: {str(e)}"}), 500
 
+HISTORY_PAGE_SIZE = 50
+
 @app.route('/get-history', methods=['GET'])
 def get_history():
-    print
     if 'user_email' not in session:
         return jsonify({"error": "Brak autoryzacji"}), 401
-        
+
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except (ValueError, TypeError):
+        offset = 0
+
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM history WHERE user_email = ?",
+        (session['user_email'],)
+    )
+    total = cursor.fetchone()[0]
+
     cursor.execute(
         """
         SELECT id, filename, raw_text, ai_notes, COALESCE(notes_model_used, ''), COALESCE(openai_usage_history, ''), datetime(created_at, 'localtime')
         FROM history
         WHERE user_email = ?
         ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
         """,
-        (session['user_email'],)
+        (session['user_email'], HISTORY_PAGE_SIZE, offset)
     )
     rows = cursor.fetchall()
-    cursor.execute(
-        """
-        SELECT ch.record_id, ch.role, ch.content, datetime(ch.created_at, 'localtime'), COALESCE(ch.model_used, ''), COALESCE(ch.openai_usage_history, '')
-        FROM chat_history ch
-        JOIN history h ON h.id = ch.record_id
-        WHERE h.user_email = ?
-        ORDER BY ch.id ASC
-        """,
-        (session['user_email'],)
-    )
-    chat_rows = cursor.fetchall()
+
+    record_ids = [r[0] for r in rows]
+    chat_rows = []
+    if record_ids:
+        placeholders = ','.join('?' * len(record_ids))
+        cursor.execute(
+            f"""
+            SELECT record_id, role, content, datetime(created_at, 'localtime'), COALESCE(model_used, ''), COALESCE(openai_usage_history, '')
+            FROM chat_history
+            WHERE record_id IN ({placeholders})
+            ORDER BY id ASC
+            """,
+            record_ids
+        )
+        chat_rows = cursor.fetchall()
     conn.close()
 
     chat_by_record = {}
@@ -2069,7 +2197,7 @@ def get_history():
             "chat_count": len(chat_messages),
             "authenticity_score": extract_authenticity_score(r[3]),
         })
-    return jsonify(history_list)
+    return jsonify({"items": history_list, "total": total, "offset": offset, "limit": HISTORY_PAGE_SIZE})
 
 @app.route('/delete-history/<int:item_id>', methods=['DELETE'])
 def delete_history(item_id):
@@ -2199,11 +2327,15 @@ def change_password():
         cursor.execute("SELECT password_hash FROM users WHERE email = ?", (email,))
         user = cursor.fetchone()
         
+        pwd_error = validate_password_strength(new_password)
         if not user or not check_password_hash(user[0], current_password):
             flash('Aktualne hasło jest niepoprawne.', 'danger')
             conn.close()
         elif new_password != confirm_new_password:
             flash('Nowe hasła nie są identyczne.', 'danger')
+            conn.close()
+        elif pwd_error:
+            flash(pwd_error, 'danger')
             conn.close()
         else:
             new_hashed = generate_password_hash(new_password)
@@ -2224,4 +2356,5 @@ def logout():
 if __name__ == '__main__':
     server_host = '0.0.0.0'
     server_port = get_server_port(host=server_host, default_port=8000)
-    app.run(debug=True, host=server_host, port=server_port)
+    debug_mode = os.getenv('FLASK_DEBUG', '0').strip() == '1'
+    app.run(debug=debug_mode, host=server_host, port=server_port)

@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Panel Transkrypcji STT</title>
     <script>if (window.innerWidth < 768) { window.location.replace('{{ url_for("mobile_page") }}'); }</script>
     <style>
@@ -866,6 +867,7 @@
             border: 1px solid rgba(16, 185, 129, 0.2);
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
 </head>
 <body>
 
@@ -1075,6 +1077,9 @@
 
     <script>
         const BASE = {{ request.script_root | tojson }};
+        function getCsrfToken() {
+            return document.querySelector('meta[name="csrf-token"]').content;
+        }
         let mediaRecorder;
         let audioChunks = [];
         let audioCtx;
@@ -1905,7 +1910,7 @@
             }
 
             chatResponse.style.display = 'block';
-            chatResponse.innerHTML = chatHistoryHtml;
+            chatResponse.innerHTML = DOMPurify.sanitize(chatHistoryHtml);
             updateUsageSummary();
         }
 
@@ -2016,40 +2021,60 @@
             historySidebar.classList.remove('open');
         });
 
-        async function loadHistoryFromServer() {
-            historyList.innerHTML = "<p style='color: var(--text-muted); font-size: 13px;'>Ładowanie historii...</p>";
+        let historyOffset = 0;
+
+        async function loadHistoryFromServer(append = false) {
+            if (!append) {
+                historyOffset = 0;
+                cachedHistory = [];
+                historyList.innerHTML = "<p style='color: var(--text-muted); font-size: 13px;'>Ładowanie historii...</p>";
+            }
             try {
-                const response = await fetch(BASE + '/get-history');
+                const response = await fetch(`${BASE}/get-history?offset=${historyOffset}`, {headers: {'X-CSRFToken': getCsrfToken()}});
                 const data = await response.json();
-                
-                if (response.ok) {
-                    cachedHistory = data;
-                    historyList.innerHTML = "";
-                    
-                    if (data.length === 0) {
-                        historyList.innerHTML = "<p style='color: var(--text-muted); font-size: 13px;'>Brak zapisanych transkrypcji.</p>";
-                        return;
-                    }
-                    
-                    data.forEach((item, index) => {
-                        const itemDiv = document.createElement('div');
-                        const chatCount = Number(item.chat_count || 0);
-                        const chatInfo = chatCount > 0 ? `<div class="history-item-chat-count">Czat AI: ${formatChatMessageCount(chatCount)}</div>` : "";
-                        itemDiv.className = "history-item";
-                        itemDiv.innerHTML = `
-                            <div class="history-item-info">
-                                <div class="history-item-title">${item.filename}</div>
-                                <div class="history-item-date">${item.created_at}</div>
-                                ${chatInfo}
-                            </div>
-                            <button class="delete-item-btn" aria-label="Usuń">🗑️</button>
-                        `;
-                        itemDiv.querySelector('.history-item-info').addEventListener('click', () => displayHistoryItem(index));
-                        itemDiv.querySelector('.delete-item-btn').addEventListener('click', (e) => deleteHistoryItem(item.id, e));
-                        historyList.appendChild(itemDiv);
-                    });
-                } else {
+
+                if (!response.ok) {
                     historyList.innerHTML = "<p style='color: var(--danger); font-size: 13px;'>Błąd pobierania danych.</p>";
+                    return;
+                }
+
+                const { items, total, limit } = data;
+                if (!append) historyList.innerHTML = "";
+
+                if (items.length === 0 && !append) {
+                    historyList.innerHTML = "<p style='color: var(--text-muted); font-size: 13px;'>Brak zapisanych transkrypcji.</p>";
+                    return;
+                }
+
+                items.forEach(item => {
+                    const index = cachedHistory.length;
+                    cachedHistory.push(item);
+                    const itemDiv = document.createElement('div');
+                    const chatCount = Number(item.chat_count || 0);
+                    const chatInfo = chatCount > 0 ? `<div class="history-item-chat-count">Czat AI: ${formatChatMessageCount(chatCount)}</div>` : "";
+                    itemDiv.className = "history-item";
+                    itemDiv.innerHTML = `
+                        <div class="history-item-info">
+                            <div class="history-item-title">${item.filename}</div>
+                            <div class="history-item-date">${item.created_at}</div>
+                            ${chatInfo}
+                        </div>
+                        <button class="delete-item-btn" aria-label="Usuń">🗑️</button>
+                    `;
+                    itemDiv.querySelector('.history-item-info').addEventListener('click', () => displayHistoryItem(index));
+                    itemDiv.querySelector('.delete-item-btn').addEventListener('click', (e) => deleteHistoryItem(item.id, e));
+                    historyList.appendChild(itemDiv);
+                });
+
+                document.getElementById('history-load-more')?.remove();
+                historyOffset += items.length;
+                if (historyOffset < total) {
+                    const moreBtn = document.createElement('button');
+                    moreBtn.id = 'history-load-more';
+                    moreBtn.textContent = `Pokaż więcej (${total - historyOffset} pozostało)`;
+                    moreBtn.style.cssText = 'width:100%;margin-top:8px;padding:6px;font-size:12px;cursor:pointer;';
+                    moreBtn.addEventListener('click', () => loadHistoryFromServer(true));
+                    historyList.appendChild(moreBtn);
                 }
             } catch (err) {
                 historyList.innerHTML = "<p style='color: var(--danger); font-size: 13px;'>Błąd połączenia z bazą.</p>";
@@ -2061,7 +2086,7 @@
             if (!confirm("Czy na pewno chcesz trwale usunąć to nagranie z historii?")) return;
 
             try {
-                const response = await fetch(`${BASE}/delete-history/${id}`, { method: 'DELETE' });
+                const response = await fetch(`${BASE}/delete-history/${id}`, { method: 'DELETE', headers: {'X-CSRFToken': getCsrfToken()} });
                 if (response.ok) {
                     if(activeRecordId === id) toggleChatAccess(false);
                     await loadHistoryFromServer(); 
@@ -2334,7 +2359,7 @@
             try {
                 const response = await fetch(BASE + '/ask-question', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken()},
                     body: JSON.stringify({
                         id: activeRecordId,
                         question: query,
@@ -2435,6 +2460,7 @@
                 const processingStartedAt = performance.now();
                 const response = await fetch(BASE + '/transcribe', {
                     method: 'POST',
+                    headers: {'X-CSRFToken': getCsrfToken()},
                     body: formData
                 });
                 
