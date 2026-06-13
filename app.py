@@ -1672,20 +1672,25 @@ def transcribe():
         
     youtube_url = request.form.get('youtube_url', '').strip()
     webpage_url = request.form.get('webpage_url', '').strip()
+    direct_text = request.form.get('direct_text', '').strip()
     processing_mode = request.form.get('processing_mode', get_default_processing_mode())
     model_name = request.form.get('model_name', 'base')
     cloud_model_id = request.form.get('cloud_model_id')
     language = request.form.get('language', 'auto')
     task = request.form.get('task', 'transcribe')
     custom_name = request.form.get('custom_name', '').strip()
-    
+
     file_path = None
     display_title = youtube_url or webpage_url or custom_name or "Przesłany plik"
     notes_model_used = ""
     yt_transcript_text = None
 
     try:
-        if youtube_url:
+        if direct_text:
+            if len(direct_text) < 3:
+                return jsonify({"error": "Tekst jest zbyt krótki"}), 400
+            display_title = custom_name if custom_name else "Tekst wklejony"
+        elif youtube_url:
             try:
                 app.logger.info("[transcribe] START ▶️YouTube 📥 try fetch_youtube_transcript dla %s", youtube_url)
                 yt_api_result = fetch_youtube_transcript(youtube_url)
@@ -1727,7 +1732,27 @@ def transcribe():
 
     try:
         # Obsługa transkrypcji strony internetowej lub z pliku tekstowego bez STT
-        if yt_transcript_text:
+        if direct_text:
+            surowy_tekst = direct_text
+            detected_lang = "Tekst wklejony"
+            model_used_info = "Tekst wklejony (brak STT)"
+            notes_model_used = describe_notes_model(None, processing_mode)
+            if processing_mode == 'online':
+                selected_transcription_model = get_selected_transcription_model(cloud_model_id)
+                preferred_provider = selected_transcription_model["provider"] if selected_transcription_model else None
+                notatki_ai, notes_model = generate_audio_notes(
+                    surowy_tekst, processing_mode,
+                    preferred_provider=preferred_provider, model_used=None
+                )
+                notes_model_used = describe_notes_model(notes_model, processing_mode)
+            else:
+                try:
+                    prompt = build_audio_notes_prompt(surowy_tekst)
+                    response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
+                    notatki_ai = response['message']['content']
+                except Exception:
+                    notatki_ai = ""
+        elif yt_transcript_text:
             surowy_tekst = yt_transcript_text
             detected_lang = "YouTube napisy"
             model_used_info = "YouTube Transcript API (napisy)"

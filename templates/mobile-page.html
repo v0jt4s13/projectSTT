@@ -218,8 +218,8 @@
         ═══════════════════════════════════════ */
         .source-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
             margin-bottom: 16px;
         }
         .src-btn {
@@ -240,11 +240,13 @@
         .src-btn--file { border: 1px solid rgba(255,255,255,0.12); }
         .src-btn--yt   { border: 1px solid rgba(239,68,68,0.4); }
         .src-btn--web  { border: 1px solid rgba(59,130,246,0.4); }
+        .src-btn--text { border: 1px solid rgba(16,185,129,0.4); }
 
         .src-btn.selected.src-btn--mic  { background: rgba(139,92,246,0.15); border-color: var(--purple); }
         .src-btn.selected.src-btn--file { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.3); }
         .src-btn.selected.src-btn--yt   { background: rgba(239,68,68,0.10); border-color: var(--red); }
         .src-btn.selected.src-btn--web  { background: rgba(59,130,246,0.10); border-color: var(--blue); }
+        .src-btn.selected.src-btn--text { background: rgba(16,185,129,0.10); border-color: var(--green); }
 
         /* ═══════════════════════════════════════
            SOURCE INPUT AREAS
@@ -938,6 +940,9 @@
             <button class="src-btn src-btn--web" id="sb-web" onclick="selectSrc('web')">
                 <span class="src-icon">🌐</span>Strona WWW
             </button>
+            <button class="src-btn src-btn--text" id="sb-text" onclick="selectSrc('text')">
+                <span class="src-icon">⌨️</span>Tekst
+            </button>
         </div>
 
         <!-- MIC INPUT -->
@@ -978,6 +983,15 @@
             <input type="url" id="web-url" class="f-input" placeholder="https://…">
             <button class="btn-main" style="background: rgba(59,130,246,0.85);"
                     onclick="processWeb()">🌐 Czytaj stronę</button>
+        </div>
+
+        <!-- TEXT INPUT -->
+        <div id="si-text" class="src-input">
+            <textarea id="direct-text-input" class="f-input"
+                      style="min-height:140px; resize:vertical; font-size:14px; line-height:1.5;"
+                      placeholder="Wklej lub wpisz tekst do przetworzenia przez AI…"></textarea>
+            <button class="btn-main" style="background: rgba(16,185,129,0.85);"
+                    onclick="processText()">⌨️ Prześlij treść</button>
         </div>
     </div>
 </div>
@@ -1220,8 +1234,8 @@
     /* ═══════════════════════════════════════════
        SOURCE SELECTION
     ═══════════════════════════════════════════ */
-    const SRC_BTNS   = { mic:'sb-mic', file:'sb-file', yt:'sb-yt', web:'sb-web' };
-    const SRC_INPUTS = { mic:'si-mic', file:'si-file', yt:'si-yt', web:'si-web' };
+    const SRC_BTNS   = { mic:'sb-mic', file:'sb-file', yt:'sb-yt', web:'sb-web', text:'sb-text' };
+    const SRC_INPUTS = { mic:'si-mic', file:'si-file', yt:'si-yt', web:'si-web', text:'si-text' };
 
     function selectSrc(type) {
         selectedSrc = type;
@@ -1248,8 +1262,10 @@
             mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
             mediaRecorder.onstop = () => {
                 clearInterval(recTicker);
-                const blob = new Blob(audioChunks, { type: 'audio/wav' });
-                submitFormData(buildFormData(blob, 'recording.wav'));
+                const mimeType = mediaRecorder.mimeType || 'audio/webm';
+                const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'webm';
+                const blob = new Blob(audioChunks, { type: mimeType });
+                submitFormData(buildFormData(blob, `recording.${ext}`));
             };
             mediaRecorder.start();
 
@@ -1306,6 +1322,14 @@
         if (!url) { showToast('Wklej adres URL strony'); return; }
         const fd = buildFormData(null, '');
         fd.append('webpage_url', url);
+        submitFormData(fd);
+    }
+
+    function processText() {
+        const text = document.getElementById('direct-text-input').value.trim();
+        if (!text) { showToast('Wpisz lub wklej tekst'); return; }
+        const fd = buildFormData(null, '');
+        fd.append('direct_text', text);
         submitFormData(fd);
     }
 

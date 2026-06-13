@@ -1013,6 +1013,16 @@
 
                 <div class="divider"></div>
 
+                <div class="tool-group" style="align-items:flex-start; flex-direction:column; gap:6px;">
+                    <label for="directTextInput" style="font-size:12px; color:var(--text-muted);">Tekst:</label>
+                    <textarea id="directTextInput"
+                              style="width:100%; min-height:72px; resize:vertical; background:var(--input-bg,rgba(255,255,255,0.05)); color:var(--text-main,#f1f5f9); border:1px solid var(--border-color,rgba(255,255,255,0.1)); border-radius:6px; padding:8px 10px; font-size:13px; font-family:inherit; outline:none;"
+                              placeholder="Wklej lub wpisz tekst do przetworzenia przez AI…"></textarea>
+                    <button id="directTextBtn" class="btn btn-secondary">⌨️ Prześlij treść</button>
+                </div>
+
+                <div class="divider"></div>
+
                 <div class="tool-group usage-summary-group">
                     <span class="usage-summary-label">Zużycie OpenAI</span>
                     <span id="usageSummary" class="usage-summary is-empty" aria-live="polite">Brak danych</span>
@@ -2254,8 +2264,10 @@
                     const customName = prompt("Jak chcesz nazwać to nagranie w historii?", "Moje nagranie audio");
                     if(customName) currentDocumentName = customName;
                     
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                    await sendAudio(audioBlob, 'recording.wav', customName);
+                    const mimeType = mediaRecorder.mimeType || 'audio/webm';
+                    const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'webm';
+                    const audioBlob = new Blob(audioChunks, { type: mimeType });
+                    await sendAudio(audioBlob, `recording.${ext}`, customName);
                 };
 
                 mediaRecorder.start();
@@ -2354,6 +2366,14 @@
         }
 
         urlInput.addEventListener('input', updateUrlInputStyle);
+
+        document.getElementById('directTextBtn').addEventListener('click', () => {
+            const text = document.getElementById('directTextInput').value.trim();
+            if (!text) { alert('Wpisz lub wklej tekst!'); return; }
+            toggleChatAccess(false);
+            setStatus("Przetwarzanie tekstu...", true);
+            sendAudio(null, '', '', '', '', text);
+        });
 
         urlProcessBtn.addEventListener('click', () => {
             const url = urlInput.value.trim();
@@ -2461,8 +2481,8 @@
             }
         });
 
-        async function sendAudio(blob, filename, customName = "", youtubeUrl = "", webpageUrl = "") {
-            const isTextOnly = (filename && filename.toLowerCase().endsWith('.txt') && !youtubeUrl) || !!webpageUrl;
+        async function sendAudio(blob, filename, customName = "", youtubeUrl = "", webpageUrl = "", directText = "") {
+            const isTextOnly = (filename && filename.toLowerCase().endsWith('.txt') && !youtubeUrl) || !!webpageUrl || !!directText;
             if (modeSwitch.checked && !isTextOnly && (!cloudModelSelect || !cloudModelSelect.value)) {
                 setStatus("Brak aktywnego modelu chmury", false);
                 alert("Dodaj aktywny model transkrypcji w ustawieniach.");
@@ -2480,6 +2500,7 @@
             formData.append('custom_name', customName);
             formData.append('youtube_url', youtubeUrl);
             formData.append('webpage_url', webpageUrl);
+            formData.append('direct_text', directText);
             formData.append('processing_mode', modeSwitch.checked ? 'online' : 'offline');
 
             resultTextarea.value = "";
