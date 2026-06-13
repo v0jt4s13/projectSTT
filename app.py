@@ -846,6 +846,7 @@ def find_deno_runtime():
 
 def build_youtube_download_options(download_token):
     ydl_opts = {
+        'cookiefile': '/opt/apps/app_projectstt/data_files/cookies.txt',
         'format': 'bestaudio/best',
         'outtmpl': os.path.join(UPLOAD_FOLDER, f'{download_token}_%(id)s.%(ext)s'),
         'quiet': True,
