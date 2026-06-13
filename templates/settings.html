@@ -712,7 +712,7 @@
             </div><!-- /.section-body -->
         </section>
     </main>
-    <script>
+    <script nonce="{{ csp_nonce() }}">
         const MODEL_CATALOG = {{ model_catalog|tojson }};
         const LOCAL_MODEL_REQUIREMENTS = {{ local_model_requirements|tojson }};
 

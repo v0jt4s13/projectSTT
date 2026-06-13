@@ -678,9 +678,39 @@
             overflow: hidden; text-overflow: ellipsis;
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+    <script nonce="{{ csp_nonce() }}">
+        const updateStylePreview = () => {
+            const browserWidth = document.documentElement?.clientWidth;
+            if (browserWidth > 768) { 
+                window.location.replace('{{ url_for("index_page") }}'); 
+            }
+        }
+        updateStylePreview();
+        // window.addEventListener("resize", updateStylePreview);
+    </script>
+    <script nonce="{{ csp_nonce() }}" src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
 </head>
 <body>
+    <!-- <h1>Info: <span id="screenLabel" class="hint"></span> | <span id="pageLabel" class="hint"></span></h1>
+    <script nonce="{{ csp_nonce() }}">
+        const updateStylePreview = () => {
+            const screenLabel = document.getElementById("screenLabel");
+            const pageLabel = document.getElementById("pageLabel");
+            const screenWidth = window.screen?.width;
+            if (screenLabel) screenLabel.textContent = `ekran: ${screenWidth || 0}px`;
+            if (pageLabel) {
+                pageLabel.textContent = `pageLabel strona: ${browserWidth || 0}px`;
+                console.log(`browserWidth=${browserWidth}`);
+            }
+            const browserWidth = document.documentElement?.clientWidth;
+            if (browserWidth > 768) { 
+                window.location.replace('{{ url_for("index_page") }}'); 
+            }
+        }
+        updateStylePreview();
+        window.addEventListener("resize", updateStylePreview);
+    </script>
+     -->
 <div id="app">
 
 <!-- ═════════════════════════════════════════════════════════
@@ -1108,7 +1138,7 @@
 
 </div><!-- #app -->
 
-<script>
+<script nonce="{{ csp_nonce() }}">
     /* ═══════════════════════════════════════════
        CONSTANTS FROM FLASK CONTEXT
     ═══════════════════════════════════════════ */

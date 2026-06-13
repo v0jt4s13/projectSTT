@@ -5,7 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Panel Transkrypcji STT</title>
-    <script>if (window.innerWidth < 768) { window.location.replace('{{ url_for("mobile_page") }}'); }</script>
+    <script nonce="{{ csp_nonce() }}">
+        const updateStylePreview = () => {
+            const browserWidth = document.documentElement?.clientWidth;
+            if (browserWidth < 768) { 
+                window.location.replace('{{ url_for("mobile_page") }}'); 
+            }
+        }
+        updateStylePreview();
+        // window.addEventListener("resize", updateStylePreview);
+    </script>
     <style>
         :root {
             --bg-main: #0b0f19;
@@ -36,6 +45,7 @@
                 radial-gradient(at 100% 100%, rgba(59, 130, 246, 0.15) 0px, transparent 50%);
             color: var(--text-main);
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
@@ -867,10 +877,31 @@
             border: 1px solid rgba(16, 185, 129, 0.2);
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+    <script nonce="{{ csp_nonce() }}" src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+
 </head>
 <body>
-
+    <!-- <h1>Info: <span id="screenLabel" class="hint"></span> | <span id="pageLabel" class="hint"></span></h1> -->
+    <!-- <script nonce="{{ csp_nonce() }}">
+        const updateStylePreview = () => {
+            const screenLabel = document.getElementById("screenLabel");
+            const pageLabel = document.getElementById("pageLabel");
+            const screenWidth = window.screen?.width;
+            const browserWidth = document.documentElement?.clientWidth;
+            console.log(screenWidth);
+            if (screenLabel) screenLabel.textContent = `ekran: ${screenWidth || 0}px`;
+            if (pageLabel) {
+                pageLabel.textContent = `pageLabel strona: ${browserWidth || 0}px`;
+                console.log(`browserWidth=${browserWidth}`);
+            }
+            if (browserWidth < 768) { 
+                console.log(browserWidth);
+                window.location.replace('{{ url_for("mobile_page") }}'); 
+            }
+        }
+        updateStylePreview();
+        window.addEventListener("resize", updateStylePreview);
+    </script> -->
     <div class="app-container">
         <div class="user-bar">
             <div>Zalogowany jako: <strong>{{ user.first_name }} {{ user.last_name }}</strong> ({{ user.email }})</div>
@@ -1075,7 +1106,7 @@
         <input type="hidden" name="title" id="exportTitle">
     </form>
 
-    <script>
+    <script nonce="{{ csp_nonce() }}">
         const BASE = {{ request.script_root | tojson }};
         function getCsrfToken() {
             return document.querySelector('meta[name="csrf-token"]').content;

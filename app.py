@@ -23,6 +23,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import ollama
 from groq import Groq
 import requests
+from youtube_transcript_api import YouTubeTranscriptApi
 import yt_dlp
 from lxml import html as lxml_html
 
@@ -126,15 +127,15 @@ Talisman(
         'font-src':    "'self' https://cdn.jsdelivr.net",
         'img-src':     "'self' data: blob:",
         'media-src':   "'self' blob:",
-        'connect-src': "'self'",
+        'connect-src': "'self' https://cdn.jsdelivr.net",
         'frame-ancestors': "'none'",
     },
-    content_security_policy_nonce_in=['script-src'],
     referrer_policy='strict-origin-when-cross-origin',
-    feature_policy={
-        'microphone': "'self'",
-        'camera': "'none'",
-        'geolocation': "'none'",
+    feature_policy=False,
+    permissions_policy={
+        'microphone': '(self)',
+        'camera': '()',
+        'geolocation': '()',
     },
 )
 
@@ -931,6 +932,31 @@ def _assert_youtube_url(url):
     if not _YOUTUBE_RE.match(url):
         raise ValueError("URL nie jest poprawnym adresem YouTube (youtube.com lub youtu.be)")
 
+def extract_youtube_video_id(url):
+    m = re.search(
+        r'(?:youtube\.com/(?:watch\?.*v=|shorts/|embed/|live/)|youtu\.be/)([a-zA-Z0-9_-]{11})',
+        url
+    )
+    if not m:
+        raise ValueError(f"Nie można wyodrębnić ID wideo z URL: {url}")
+    return m.group(1)
+
+_ytt_api = YouTubeTranscriptApi()
+
+def fetch_youtube_transcript(url):
+    """Pobiera napisy przez YouTube Transcript API (v1.x). Szybkie, nie wymaga pobierania audio."""
+    video_id = extract_youtube_video_id(url)
+    snippets = _ytt_api.fetch(video_id, languages=['pl', 'en'])
+    text = ' '.join(s.text for s in snippets).strip()
+    if not text:
+        raise ValueError("Napisy są puste")
+    return {
+        "text": text,
+        "title": f"YT: {video_id}",
+        "video_id": video_id,
+        "source": "transcript_api",
+    }
+
 def download_youtube_audio(youtube_url):
     _assert_youtube_url(youtube_url)
     download_token = uuid.uuid4().hex
@@ -1655,12 +1681,20 @@ def transcribe():
     file_path = None
     display_title = ""
     notes_model_used = ""
+    yt_transcript_text = None
 
     try:
         if youtube_url:
-            youtube_download = download_youtube_audio(youtube_url)
-            file_path = youtube_download["file_path"]
-            display_title = custom_name if custom_name else f"YT: {youtube_download['title']}"
+            try:
+                yt_api_result = fetch_youtube_transcript(youtube_url)
+                yt_transcript_text = yt_api_result["text"]
+                display_title = custom_name if custom_name else yt_api_result["title"]
+                app.logger.info("YouTube Transcript API: pobrano napisy dla %s", yt_api_result["video_id"])
+            except Exception as yt_api_err:
+                app.logger.info("YouTube Transcript API niedostępne (%s), pobieranie audio...", yt_api_err)
+                youtube_download = download_youtube_audio(youtube_url)
+                file_path = youtube_download["file_path"]
+                display_title = custom_name if custom_name else f"YT: {youtube_download['title']}"
         elif webpage_url:
             _web_content, _web_title = fetch_webpage_content(webpage_url)
             display_title = custom_name if custom_name else (_web_title or webpage_url)
@@ -1685,7 +1719,27 @@ def transcribe():
 
     try:
         # Obsługa transkrypcji strony internetowej lub z pliku tekstowego bez STT
-        if not youtube_url or webpage_url or (file_path and file_path.endswith('.txt')):
+        if yt_transcript_text:
+            surowy_tekst = yt_transcript_text
+            detected_lang = "YouTube napisy"
+            model_used_info = "YouTube Transcript API (napisy)"
+            notes_model_used = describe_notes_model(None, processing_mode)
+            if processing_mode == 'online':
+                selected_transcription_model = get_selected_transcription_model(cloud_model_id)
+                preferred_provider = selected_transcription_model["provider"] if selected_transcription_model else None
+                notatki_ai, notes_model = generate_audio_notes(
+                    surowy_tekst, processing_mode,
+                    preferred_provider=preferred_provider, model_used=None
+                )
+                notes_model_used = describe_notes_model(notes_model, processing_mode)
+            else:
+                try:
+                    prompt = build_audio_notes_prompt(surowy_tekst)
+                    response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
+                    notatki_ai = response['message']['content']
+                except Exception:
+                    notatki_ai = ""
+        elif not youtube_url or webpage_url or (file_path and file_path.endswith('.txt')):
             if webpage_url:
                 surowy_tekst = _web_content
                 detected_lang = "Strona internetowa"
@@ -1842,8 +1896,52 @@ def api_youtube_transcribe():
     file_path = None
 
     try:
-        youtube_download = download_youtube_audio(yt_url)
-        file_path = youtube_download["file_path"]
+        # Próba szybkiego pobrania napisów (bez pobierania audio)
+        yt_transcript = None
+        youtube_download = None
+        try:
+            yt_transcript = fetch_youtube_transcript(yt_url)
+            app.logger.info("YouTube Transcript API: pobrano napisy dla %s", yt_transcript["video_id"])
+        except Exception as yt_api_err:
+            app.logger.info("YouTube Transcript API niedostępne (%s), pobieranie audio...", yt_api_err)
+            youtube_download = download_youtube_audio(yt_url)
+            file_path = youtube_download["file_path"]
+
+        if yt_transcript:
+            # Ścieżka przez Transcript API — brak STT, tylko notatki
+            selected_transcription_model = get_selected_transcription_model(cloud_model_id)
+            preferred_provider = selected_transcription_model["provider"] if selected_transcription_model else None
+            notatki_ai, notes_model = generate_audio_notes(
+                yt_transcript["text"], processing_mode,
+                preferred_provider=preferred_provider, model_used=None
+            )
+            notes_model_used = describe_notes_model(notes_model, processing_mode)
+            saved_name = custom_name if custom_name else yt_transcript["title"]
+            record_id = None
+            openai_usage_history = get_current_openai_usage_history()
+            if save_to_history:
+                record_id = save_transcription_history(
+                    session['user_email'], saved_name,
+                    yt_transcript["text"], notatki_ai, notes_model_used, openai_usage_history
+                )
+            return jsonify({
+                "text": yt_transcript["text"],
+                "summary": notatki_ai,
+                "notes": notatki_ai,
+                "language": "YouTube napisy",
+                "model_used": "YouTube Transcript API (napisy)",
+                "notes_model_used": notes_model_used,
+                "task": "transcript",
+                "saved": record_id is not None,
+                "saved_name": saved_name,
+                "record_id": record_id,
+                "openai_usage_history": openai_usage_history,
+                "authenticity_score": extract_authenticity_score(notatki_ai),
+                "youtube": {"id": yt_transcript["video_id"], "title": yt_transcript["title"],
+                            "duration": None, "url": yt_url}
+            })
+
+        # Fallback: audio pobrany przez yt_dlp → STT
         transcription_result = process_audio_transcription(
             file_path,
             processing_mode=processing_mode,
