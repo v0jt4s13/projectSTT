@@ -1679,22 +1679,29 @@ def transcribe():
     custom_name = request.form.get('custom_name', '').strip()
     
     file_path = None
-    display_title = ""
+    display_title = youtube_url or webpage_url or custom_name or "Przesłany plik"
     notes_model_used = ""
     yt_transcript_text = None
 
     try:
         if youtube_url:
             try:
+                app.logger.info("[transcribe] START ▶️YouTube 📥 try fetch_youtube_transcript dla %s", youtube_url)
                 yt_api_result = fetch_youtube_transcript(youtube_url)
                 yt_transcript_text = yt_api_result["text"]
                 display_title = custom_name if custom_name else yt_api_result["title"]
-                app.logger.info("YouTube Transcript API: pobrano napisy dla %s", yt_api_result["video_id"])
+                app.logger.info("[transcribe] YouTube Transcript API: pobrano napisy dla %s", yt_api_result["video_id"])
             except Exception as yt_api_err:
-                app.logger.info("YouTube Transcript API niedostępne (%s), pobieranie audio...", yt_api_err)
-                youtube_download = download_youtube_audio(youtube_url)
-                file_path = youtube_download["file_path"]
-                display_title = custom_name if custom_name else f"YT: {youtube_download['title']}"
+                app.logger.info("[transcribe] YouTube Transcript API niedostępne (%s)", yt_api_err)
+                try:
+                    app.logger.info("[transcribe] START ▶️YouTube 📥 try download_youtube_audio dla %s", youtube_url)
+                    youtube_download = download_youtube_audio(youtube_url)
+                    file_path = youtube_download["file_path"]
+                    display_title = custom_name if custom_name else f"YT: {youtube_download['title']}"
+                except Exception as yt_download_err:
+                    app.logger.error("[transcribe] Błąd pobierania audio z YouTube (%s)", yt_download_err)
+                    # raise Exception("Nie można pobrać transkrypcji ani audio z podanego linku YouTube.")    
+                
         elif webpage_url:
             _web_content, _web_title = fetch_webpage_content(webpage_url)
             display_title = custom_name if custom_name else (_web_title or webpage_url)
