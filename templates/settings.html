@@ -7,6 +7,7 @@
     <title>Ustawienia modeli AI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style-settings.css') }}">
+    <script>(function(){var s=localStorage.getItem('theme');document.documentElement.setAttribute('data-theme',s||(window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'));})();</script>
 </head>
 <body>
     <main class="page">
@@ -41,6 +42,7 @@
                 <p class="muted">Modele korzystają z kluczy zapisanych w `.env`; wartości kluczy nie są pokazywane w aplikacji.</p>
             </div>
             <div class="topbar-right">
+                <!-- <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button> -->
                 <button class="icon-btn" onclick="openSidebar()" title="Menu">☰</button>
             </div>
         </div>
@@ -68,6 +70,10 @@
                         </span>
                     {% endfor %}
                 </div>
+                <div>
+                    Zmień motyw <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button>
+                </div>
+
             </div>
         </section>
 
@@ -709,6 +715,17 @@
 function openOverlay(id)  { document.getElementById(id).classList.add('open'); }
 function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
 function openSidebar()    { openOverlay('ov-sidebar'); }
+function toggleTheme() {
+    var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+    updateThemeBtn();
+}
+function updateThemeBtn() {
+    var btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = document.documentElement.getAttribute('data-theme') === 'light' ? '☀️' : '🌙';
+}
+document.addEventListener('DOMContentLoaded', updateThemeBtn);
 </script>
 </body>
 </html>

@@ -10,6 +10,13 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style-mobile.css') }}">
     <script nonce="{{ csp_nonce() }}">
+        (function() {
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.setAttribute('data-theme', saved || (prefersDark ? 'dark' : 'light'));
+        })();
+    </script>
+    <script nonce="{{ csp_nonce() }}">
         const updateStylePreview = () => {
             const browserWidth = document.documentElement?.clientWidth;
             if (browserWidth > 768) { 
@@ -626,6 +633,7 @@
     function openSource()   { openOverlay('ov-source'); }
     function openSettings() { openOverlay('ov-settings'); }
     function openSidebar()  { openOverlay('ov-sidebar'); }
+
 
     function openHistory() {
         histSelectMode = false;

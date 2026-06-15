@@ -3,12 +3,13 @@
 ═══════════════════════════════════════ */
 
 :root {
-    --bg-main: #0b0f19;
-    --bg-card: rgba(23, 28, 41, 0.6);
+    --bg-base:    #0b0f19;
+    --bg-main:    #0b0f19;
+    --bg-card:    rgba(23, 28, 41, 0.6);
     --bg-toolbar: rgba(30, 37, 56, 0.4);
     --bg-surface: rgba(23, 28, 41, 0.7);
     --border-color: rgba(255, 255, 255, 0.08);
-    --text-main: #f1f5f9;
+    --text-main:  #f1f5f9;
     --text-primary: #f1f5f9;
     --text-muted: #94a3b8;
     --accent-purple: #8b5cf6;
@@ -29,6 +30,54 @@
     --r-card:  14px;
     --r-panel: 20px;
     --touch:   44px;
+}
+
+[data-theme="light"] {
+    --bg-base:      #f0f4f8;
+    --bg-main:      #f0f4f8;
+    --bg-card:      rgba(255, 255, 255, 0.85);
+    --bg-toolbar:   rgba(240, 244, 248, 0.92);
+    --bg-surface:   rgba(255, 255, 255, 0.88);
+    --bg-panel:     rgba(240, 244, 248, 0.96);
+    --bg-control:   rgba(220, 228, 240, 0.8);
+    --border-color: rgba(0, 0, 0, 0.08);
+    --border:       rgba(0, 0, 0, 0.08);
+    --text-main:    #1e293b;
+    --text-primary: #1e293b;
+    --text-muted:   #64748b;
+}
+
+[data-theme="light"] body {
+    background-image:
+        radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.07) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(59, 130, 246, 0.07) 0px, transparent 50%);
+}
+
+[data-theme="light"] .topbar {
+    background: rgba(240, 244, 248, 0.96);
+}
+
+[data-theme="light"] .topbar-select {
+    background: rgba(255, 255, 255, 0.7);
+}
+
+[data-theme="light"] .icon-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .backdrop {
+    background: rgba(0, 0, 0, 0.28);
+}
+
+[data-theme="light"] .form-control:focus {
+    background-color: rgba(255, 255, 255, 0.95);
+}
+
+[data-theme="light"] .form-control:-webkit-autofill,
+[data-theme="light"] .form-control:-webkit-autofill:hover,
+[data-theme="light"] .form-control:-webkit-autofill:focus {
+    box-shadow: 0 0 0 1000px #fff inset;
+    -webkit-text-fill-color: var(--text-main);
 }
 /* ═══════════════════════════════════════
    RESET & BASE

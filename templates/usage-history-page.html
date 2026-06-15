@@ -7,6 +7,7 @@
     <title>Historia zużycia tokenów</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style-usage-history.css') }}">
+    <script>(function(){var s=localStorage.getItem('theme');document.documentElement.setAttribute('data-theme',s||(window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'));})();</script>
 </head>
 <body>
 <div class="page">
@@ -76,7 +77,7 @@
     <!-- ── admin: leaderboard ── -->
     <div class="section">
         <div class="section-title">Ranking użytkowników wg kosztu</div>
-        <table>
+        <table class="tbl-leaderboard">
             <thead>
                 <tr>
                     <th style="width:32px;">#</th>
@@ -145,7 +146,7 @@
     <div class="section">
         <div class="section-title">Zużycie wg modelu</div>
         {% if by_model %}
-        <table>
+        <table class="tbl-data">
             <thead>
                 <tr>
                     <th>Model</th>
@@ -176,7 +177,7 @@
     <div class="section">
         <div class="section-title">Zużycie wg operacji</div>
         {% if by_op %}
-        <table>
+        <table class="tbl-data">
             <thead>
                 <tr>
                     <th>Operacja</th>
@@ -207,7 +208,7 @@
     <div class="section">
         <div class="section-title">Dzienne zestawienie</div>
         {% if by_day %}
-        <table>
+        <table class="tbl-data">
             <thead>
                 <tr>
                     <th>Data</th>

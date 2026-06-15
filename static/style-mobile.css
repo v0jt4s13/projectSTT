@@ -672,3 +672,26 @@ html {
     flex: 1; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis;
 }
+
+/* ═══════════════════════════════════════
+   LIGHT THEME OVERRIDES
+═══════════════════════════════════════ */
+[data-theme="light"] .dash-card:active          { background: rgba(200, 210, 225, 0.95); }
+[data-theme="light"] .dash-card--notes          { background: rgba(139, 92, 246, 0.06); }
+[data-theme="light"] .f-input                   { background: rgba(255, 255, 255, 0.9); }
+[data-theme="light"] .f-select                  { background: rgba(255, 255, 255, 0.9); }
+[data-theme="light"] .mini-player               { background: rgba(255, 255, 255, 0.65); }
+[data-theme="light"] .notes-summary             { background: rgba(255, 255, 255, 0.85); }
+[data-theme="light"] .bubble--ai                { background: rgba(235, 240, 248, 0.95); }
+[data-theme="light"] .chat-textarea             { background: rgba(255, 255, 255, 0.85); }
+[data-theme="light"] .note-panel-textarea       { background: #f8fafc; }
+[data-theme="light"] #toast                     { background: rgba(240, 244, 248, 0.98); }
+[data-theme="light"] .hist-item                 { background: rgba(0, 0, 0, 0.02); }
+[data-theme="light"] .hist-item:active          { background: rgba(0, 0, 0, 0.06); }
+[data-theme="light"] .spinner                   { border-color: rgba(0, 0, 0, 0.12); border-top-color: var(--purple); }
+[data-theme="light"] .tog-slider                { background: rgba(0, 0, 0, 0.1); }
+[data-theme="light"] .btn-secondary             { background: rgba(0, 0, 0, 0.04); }
+[data-theme="light"] .btn-secondary:active      { background: rgba(0, 0, 0, 0.08); }
+[data-theme="light"] .file-info-row             { background: rgba(0, 0, 0, 0.02); border-color: rgba(0, 0, 0, 0.1); }
+[data-theme="light"] .src-btn--file             { border-color: rgba(0, 0, 0, 0.15); }
+[data-theme="light"] .src-btn.selected.src-btn--file { background: rgba(0, 0, 0, 0.05); border-color: rgba(0, 0, 0, 0.3); }
