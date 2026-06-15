@@ -11,6 +11,8 @@ import socket
 import ipaddress
 import glob
 import uuid
+import hashlib
+import secrets
 from datetime import datetime, timezone
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file, g, has_request_context
 from flask_limiter import Limiter
@@ -36,6 +38,20 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 # ADMIN_EMAIL = 'test@marzec.eu'
 ADMIN_EMAIL = 'wmarzec@gmail.com'
+HISTORY_PAGE_SIZE = 50
+
+_YOUTUBE_RE = re.compile(
+    r'^https?://(www\.|m\.)?(youtube\.com/(watch|shorts|embed|live)|youtu\.be/)',
+    re.IGNORECASE,
+)
+
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network(cidr) for cidr in (
+        "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+        "169.254.0.0/16", "0.0.0.0/8", "100.64.0.0/10",
+        "::1/128", "fc00::/7", "fe80::/10",
+    )
+]
 
 def parse_startup_args():
     parser = argparse.ArgumentParser(add_help=False)
@@ -113,6 +129,8 @@ limiter = Limiter(
 )
 csrf = CSRFProtect(app)
 
+_ytt_api = YouTubeTranscriptApi()
+
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):
     return jsonify({"error": "Nieprawidłowy token CSRF. Odśwież stronę i spróbuj ponownie."}), 400
@@ -180,6 +198,41 @@ def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
+
+def get_authenticated_user():
+    """Zwraca e-mail użytkownika z sesji lub klucza API. None jeśli brak autoryzacji."""
+    if 'user_email' in session:
+        return session['user_email']
+    api_key = None
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        api_key = auth_header[7:].strip()
+    if not api_key:
+        api_key = request.headers.get('X-API-Key', '').strip()
+    if not api_key:
+        return None
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_email, allowed_origin FROM api_keys WHERE key_hash = ?", (key_hash,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+    user_email, allowed_origin = row[0], (row[1] or '').strip()
+    if allowed_origin:
+        base = allowed_origin.rstrip('/')
+        origin = request.headers.get('Origin', '').rstrip('/')
+        referer = request.headers.get('Referer', '').rstrip('/')
+        origin_ok = origin and (origin == base or origin.startswith(base + '/'))
+        referer_ok = referer and (referer == base or referer.startswith(base + '/'))
+        if not origin_ok and not referer_ok:
+            conn.close()
+            return None
+    cursor.execute("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?", (key_hash,))
+    conn.commit()
+    conn.close()
+    return user_email
 
 def to_plain_data(value):
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -956,19 +1009,6 @@ def resolve_youtube_download_path(ydl, info, download_token):
         f"Szukano w: {candidates}"
     )
 
-_YOUTUBE_RE = re.compile(
-    r'^https?://(www\.|m\.)?(youtube\.com/(watch|shorts|embed|live)|youtu\.be/)',
-    re.IGNORECASE,
-)
-
-_PRIVATE_NETWORKS = [
-    ipaddress.ip_network(cidr) for cidr in (
-        "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
-        "169.254.0.0/16", "0.0.0.0/8", "100.64.0.0/10",
-        "::1/128", "fc00::/7", "fe80::/10",
-    )
-]
-
 def _assert_safe_url(url):
     from urllib.parse import urlparse
     parsed = urlparse(url)
@@ -998,7 +1038,6 @@ def extract_youtube_video_id(url):
         raise ValueError(f"Nie można wyodrębnić ID wideo z URL: {url}")
     return m.group(1)
 
-_ytt_api = YouTubeTranscriptApi()
 
 def fetch_youtube_transcript(url):
     """Pobiera napisy przez YouTube Transcript API (v1.x). Szybkie, nie wymaga pobierania audio."""
@@ -1515,6 +1554,23 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_ai_models_lookup
         ON ai_models(model_type, provider, enabled, is_default)
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email TEXT NOT NULL,
+            key_hash TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL DEFAULT '',
+            allowed_origin TEXT NOT NULL DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_used_at DATETIME,
+            FOREIGN KEY(user_email) REFERENCES users(email) ON DELETE CASCADE
+        )
+    ''')
+    # migration: add column to existing databases
+    try:
+        cursor.execute("ALTER TABLE api_keys ADD COLUMN allowed_origin TEXT NOT NULL DEFAULT ''")
+    except Exception:
+        pass
     seed_default_ai_models(cursor)
     conn.commit()
     conn.close()
@@ -1532,6 +1588,7 @@ else:
     print("Pominięto ładowanie lokalnych modeli Whisper (--no-local-models).")
     models = {}
 
+# Trasy dla poszczególnych stron aplikacji
 @app.route('/', methods=['GET', 'POST'])
 @limiter.limit("20 per minute; 5 per second")
 def login():
@@ -1556,6 +1613,51 @@ def login():
             flash('Błędny email lub hasło.', 'danger')
         
     return render_template('login-page.html')
+
+@app.route('/change-password', methods=['GET', 'POST'])
+def change_password():
+    print
+    if 'user_email' not in session:
+        flash('Musisz się zalogować, aby zmienić hasło.', 'danger')
+        return redirect(url_for('login'))
+        
+    if request.method == 'POST':
+        current_password = request.form.get('current_password')
+        new_password = request.form.get('new_password')
+        confirm_new_password = request.form.get('confirm_new_password')
+        
+        email = session['user_email']
+        
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT password_hash FROM users WHERE email = ?", (email,))
+        user = cursor.fetchone()
+        
+        pwd_error = validate_password_strength(new_password)
+        if not user or not check_password_hash(user[0], current_password):
+            flash('Aktualne hasło jest niepoprawne.', 'danger')
+            conn.close()
+        elif new_password != confirm_new_password:
+            flash('Nowe hasła nie są identyczne.', 'danger')
+            conn.close()
+        elif pwd_error:
+            flash(pwd_error, 'danger')
+            conn.close()
+        else:
+            new_hashed = generate_password_hash(new_password)
+            cursor.execute("UPDATE users SET password_hash = ? WHERE email = ?", (new_hashed, email))
+            conn.commit()
+            conn.close()
+            flash('Hasło zostało pomyślnie zmienione!', 'success')
+            return redirect(url_for('index_page'))
+            
+    return render_template('zmiana-hasla.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('user_email', None)
+    flash('Wylogowano pomyślnie.', 'success')
+    return redirect(url_for('login'))
 
 @app.route('/register', methods=['GET', 'POST'])
 @limiter.limit("10 per hour; 3 per minute")
@@ -1687,7 +1789,6 @@ def mobile_page():
         default_chat_model_label=describe_chat_answer_model(default_chat_model) if default_chat_model else "Brak dostępnego modelu OpenAI chat",
         local_models_enabled=LOCAL_MODELS_ENABLED
     )
-
 
 @app.route('/usage-history', methods=['GET'])
 def usage_history():
@@ -1831,7 +1932,6 @@ def usage_history():
         user=current_user,
     )
 
-
 @app.route('/settings', methods=['GET'])
 def settings():
     if 'user_email' not in session:
@@ -1937,7 +2037,6 @@ def update_pricing_route():
         save_pricing_data(new_overrides, timestamp)
 
     return jsonify({'ok': True, 'changes': changes, 'timestamp': timestamp})
-
 
 @app.route('/settings/models', methods=['POST'])
 def add_model():
@@ -2050,11 +2149,121 @@ def update_model(model_pk):
     flash('Model został zaktualizowany.', 'success')
     return redirect(url_for('settings'))
 
+@app.route('/api/models', methods=['GET'])
+def api_models():
+    print
+    model_type = (request.args.get("type") or request.args.get("model_type") or "").strip().lower() or None
+    if model_type and model_type not in MODEL_TYPES:
+        allowed_types = "', '".join(MODEL_TYPES.keys())
+        return jsonify({"error": f"Nieobsługiwany typ modelu. Użyj jednego z: '{allowed_types}'."}), 400
+
+    include_disabled = parse_bool_setting(request.args.get("include_disabled"), default=False)
+
+    local_models = build_local_model_list(model_type=model_type)
+    cloud_models = build_cloud_model_list(model_type=model_type, include_disabled=include_disabled)
+
+    return jsonify({
+        "local": local_models,
+        "cloud": cloud_models,
+        "models": local_models + cloud_models,
+        "filters": {
+            "type": model_type,
+            "include_disabled": include_disabled
+        },
+        "counts": {
+            "local": len(local_models),
+            "cloud": len(cloud_models),
+            "total": len(local_models) + len(cloud_models)
+        }
+    })
+
+@app.route('/get-history', methods=['GET'])
+def get_history():
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except (ValueError, TypeError):
+        offset = 0
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM history WHERE user_email = ?",
+        (user_email,)
+    )
+    total = cursor.fetchone()[0]
+
+    cursor.execute(
+        """
+        SELECT id, filename, raw_text, ai_notes, COALESCE(notes_model_used, ''), COALESCE(openai_usage_history, ''), datetime(created_at, 'localtime')
+        FROM history
+        WHERE user_email = ?
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+        """,
+        (user_email, HISTORY_PAGE_SIZE, offset)
+    )
+    rows = cursor.fetchall()
+
+    record_ids = [r[0] for r in rows]
+    chat_rows = []
+    if record_ids:
+        placeholders = ','.join('?' * len(record_ids))
+        cursor.execute(
+            f"""
+            SELECT record_id, role, content, datetime(created_at, 'localtime'), COALESCE(model_used, ''), COALESCE(openai_usage_history, '')
+            FROM chat_history
+            WHERE record_id IN ({placeholders})
+            ORDER BY id ASC
+            """,
+            record_ids
+        )
+        chat_rows = cursor.fetchall()
+    conn.close()
+
+    chat_by_record = {}
+    for record_id, role, content, created_at, model_used, openai_usage_history in chat_rows:
+        chat_by_record.setdefault(record_id, []).append({
+            "role": role,
+            "content": content,
+            "created_at": created_at,
+            "engine": model_used,
+            "openai_usage_history": parse_openai_usage_history(openai_usage_history)
+        })
+    
+    history_list = []
+    for r in rows:
+        chat_messages = chat_by_record.get(r[0], [])
+        notes_usage = parse_openai_usage_history(r[5])
+        chat_usage_lists = [m.get("openai_usage_history", []) for m in chat_messages]
+        history_list.append({
+            "id": r[0],
+            "filename": r[1],
+            "raw_text": r[2],
+            "ai_notes": r[3],
+            "notes_model_used": r[4],
+            "openai_usage_history": notes_usage,
+            "created_at": r[6],
+            "chat_messages": chat_messages,
+            "chat_count": len(chat_messages),
+            "authenticity_score": extract_authenticity_score(r[3]),
+            "token_summary": compute_token_summary([notes_usage] + chat_usage_lists),
+        })
+    return jsonify({"items": history_list, "total": total, "offset": offset, "limit": HISTORY_PAGE_SIZE})
+
+
+# Trasy dla poszczególnych API endpoints uwzględniające ograniczenia limitów i autoryzację
 @app.route('/transcribe', methods=['POST'])
 @limiter.limit("30 per hour; 5 per minute")
+@csrf.exempt
 def transcribe():
     # print(f"[API /transcribe] Request received with form data: {request.form} and files: {request.files}")
-    if 'user_email' not in session:
+    user_email = get_authenticated_user()
+    if not user_email:
         return jsonify({"error": "Brak autoryzacji"}), 401
         
     youtube_url = request.form.get('youtube_url', '').strip()
@@ -2225,7 +2434,7 @@ def transcribe():
         try:
             openai_usage_history = get_current_openai_usage_history()
             new_id = save_transcription_history(
-                session['user_email'],
+                user_email,
                 display_title,
                 surowy_tekst,
                 notatki_ai,
@@ -2258,39 +2467,13 @@ def transcribe():
             os.remove(file_path)
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/models', methods=['GET'])
-def api_models():
-    print
-    model_type = (request.args.get("type") or request.args.get("model_type") or "").strip().lower() or None
-    if model_type and model_type not in MODEL_TYPES:
-        allowed_types = "', '".join(MODEL_TYPES.keys())
-        return jsonify({"error": f"Nieobsługiwany typ modelu. Użyj jednego z: '{allowed_types}'."}), 400
-
-    include_disabled = parse_bool_setting(request.args.get("include_disabled"), default=False)
-
-    local_models = build_local_model_list(model_type=model_type)
-    cloud_models = build_cloud_model_list(model_type=model_type, include_disabled=include_disabled)
-
-    return jsonify({
-        "local": local_models,
-        "cloud": cloud_models,
-        "models": local_models + cloud_models,
-        "filters": {
-            "type": model_type,
-            "include_disabled": include_disabled
-        },
-        "counts": {
-            "local": len(local_models),
-            "cloud": len(cloud_models),
-            "total": len(local_models) + len(cloud_models)
-        }
-    })
-
 @app.route('/api/youtube/transcribe', methods=['POST'])
 @limiter.limit("10 per hour; 2 per minute")
+@csrf.exempt
 def api_youtube_transcribe():
     # print(f"[API /api/youtube/transcribe] Request received with JSON: {request.get_json(silent=True)}")
-    if 'user_email' not in session:
+    user_email = get_authenticated_user()
+    if not user_email:
         return jsonify({"error": "Brak autoryzacji"}), 401
 
     payload = request.get_json(silent=True)
@@ -2348,7 +2531,7 @@ def api_youtube_transcribe():
             openai_usage_history = get_current_openai_usage_history()
             if save_to_history:
                 record_id = save_transcription_history(
-                    session['user_email'], saved_name,
+                    user_email, saved_name,
                     yt_transcript["text"], notatki_ai, notes_model_used, openai_usage_history
                 )
             return jsonify({
@@ -2386,7 +2569,7 @@ def api_youtube_transcribe():
         openai_usage_history = get_current_openai_usage_history()
         if save_to_history:
             record_id = save_transcription_history(
-                session['user_email'],
+                user_email,
                 saved_name,
                 transcription_result["text"],
                 transcription_result["notes"],
@@ -2425,9 +2608,10 @@ def api_youtube_transcribe():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/webpage/read', methods=['POST'])
+@csrf.exempt
 def api_webpage_read():
-    print
-    if 'user_email' not in session:
+    user_email = get_authenticated_user()
+    if not user_email:
         return jsonify({"error": "Brak autoryzacji"}), 401
 
     payload = request.get_json(silent=True)
@@ -2483,7 +2667,7 @@ def api_webpage_read():
         openai_usage_history = get_current_openai_usage_history()
         if save_to_history:
             record_id = save_transcription_history(
-                session['user_email'],
+                user_email,
                 saved_name,
                 web_text,
                 notes,
@@ -2513,22 +2697,22 @@ def api_webpage_read():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @app.route('/new-chat', methods=['POST'])
 @limiter.limit("30 per hour")
+@csrf.exempt
 def new_chat():
-    user_email = session.get('user_email')
+    user_email = get_authenticated_user()
     if not user_email:
         return jsonify({"error": "Brak autoryzacji"}), 401
     record_id = save_transcription_history(user_email, 'Nowy czat', '', '')
     return jsonify({"record_id": record_id})
 
-
 @app.route('/ask-question', methods=['POST'])
 @limiter.limit("60 per hour; 10 per minute")
+@csrf.exempt
 def ask_question():
     # print(f"[API /ask-question] Request received with JSON: {request.get_json(silent=True)}")
-    user_email = session.get('user_email')
+    user_email = get_authenticated_user()
     if not user_email:
         app.logger.warning("ask-question: unauthorized request from %s", request.remote_addr)
         return jsonify({"error": "Brak autoryzacji"}), 401
@@ -2658,102 +2842,25 @@ def ask_question():
         )
         return jsonify({"error": f"Błąd AI: {str(e)}"}), 500
 
-HISTORY_PAGE_SIZE = 50
-
-@app.route('/get-history', methods=['GET'])
-def get_history():
-    if 'user_email' not in session:
-        return jsonify({"error": "Brak autoryzacji"}), 401
-
-    try:
-        offset = max(0, int(request.args.get('offset', 0)))
-    except (ValueError, TypeError):
-        offset = 0
-
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT COUNT(*) FROM history WHERE user_email = ?",
-        (session['user_email'],)
-    )
-    total = cursor.fetchone()[0]
-
-    cursor.execute(
-        """
-        SELECT id, filename, raw_text, ai_notes, COALESCE(notes_model_used, ''), COALESCE(openai_usage_history, ''), datetime(created_at, 'localtime')
-        FROM history
-        WHERE user_email = ?
-        ORDER BY created_at DESC
-        LIMIT ? OFFSET ?
-        """,
-        (session['user_email'], HISTORY_PAGE_SIZE, offset)
-    )
-    rows = cursor.fetchall()
-
-    record_ids = [r[0] for r in rows]
-    chat_rows = []
-    if record_ids:
-        placeholders = ','.join('?' * len(record_ids))
-        cursor.execute(
-            f"""
-            SELECT record_id, role, content, datetime(created_at, 'localtime'), COALESCE(model_used, ''), COALESCE(openai_usage_history, '')
-            FROM chat_history
-            WHERE record_id IN ({placeholders})
-            ORDER BY id ASC
-            """,
-            record_ids
-        )
-        chat_rows = cursor.fetchall()
-    conn.close()
-
-    chat_by_record = {}
-    for record_id, role, content, created_at, model_used, openai_usage_history in chat_rows:
-        chat_by_record.setdefault(record_id, []).append({
-            "role": role,
-            "content": content,
-            "created_at": created_at,
-            "engine": model_used,
-            "openai_usage_history": parse_openai_usage_history(openai_usage_history)
-        })
-    
-    history_list = []
-    for r in rows:
-        chat_messages = chat_by_record.get(r[0], [])
-        notes_usage = parse_openai_usage_history(r[5])
-        chat_usage_lists = [m.get("openai_usage_history", []) for m in chat_messages]
-        history_list.append({
-            "id": r[0],
-            "filename": r[1],
-            "raw_text": r[2],
-            "ai_notes": r[3],
-            "notes_model_used": r[4],
-            "openai_usage_history": notes_usage,
-            "created_at": r[6],
-            "chat_messages": chat_messages,
-            "chat_count": len(chat_messages),
-            "authenticity_score": extract_authenticity_score(r[3]),
-            "token_summary": compute_token_summary([notes_usage] + chat_usage_lists),
-        })
-    return jsonify({"items": history_list, "total": total, "offset": offset, "limit": HISTORY_PAGE_SIZE})
-
 @app.route('/delete-history/<int:item_id>', methods=['DELETE'])
+@csrf.exempt
 def delete_history(item_id):
-    # print(f"[API /delete-history/{item_id}] Request received")
-    if 'user_email' not in session:
+    user_email = get_authenticated_user()
+    if not user_email:
         return jsonify({"error": "Brak autoryzacji"}), 401
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM history WHERE id = ? AND user_email = ?", (item_id, session['user_email']))
+    cursor.execute("DELETE FROM history WHERE id = ? AND user_email = ?", (item_id, user_email))
     conn.commit()
     conn.close()
     return jsonify({"success": True})
 
-
 @app.route('/delete-history/bulk', methods=['POST'])
+@csrf.exempt
 def delete_history_bulk():
-    if 'user_email' not in session:
+    user_email = get_authenticated_user()
+    if not user_email:
         return jsonify({"error": "Brak autoryzacji"}), 401
     data = request.get_json(silent=True) or {}
     ids = data.get('ids', [])
@@ -2764,16 +2871,17 @@ def delete_history_bulk():
     cursor = conn.cursor()
     cursor.executemany(
         "DELETE FROM history WHERE id = ? AND user_email = ?",
-        [(i, session['user_email']) for i in ids]
+        [(i, user_email) for i in ids]
     )
     conn.commit()
     conn.close()
     return jsonify({"success": True, "deleted": len(ids)})
 
-
 @app.route('/history/<int:item_id>/rename', methods=['PATCH'])
+@csrf.exempt
 def rename_history(item_id):
-    if 'user_email' not in session:
+    user_email = get_authenticated_user()
+    if not user_email:
         return jsonify({"error": "Brak autoryzacji"}), 401
     data = request.get_json(silent=True) or {}
     new_name = str(data.get('name') or '').strip()
@@ -2783,16 +2891,16 @@ def rename_history(item_id):
     cursor = conn.cursor()
     cursor.execute(
         "UPDATE history SET filename = ? WHERE id = ? AND user_email = ?",
-        (new_name, item_id, session['user_email'])
+        (new_name, item_id, user_email)
     )
     conn.commit()
     conn.close()
     return jsonify({"success": True})
 
 @app.route('/export/docx', methods=['POST'])
+@csrf.exempt
 def export_docx():
-    # print(f"[API /export/docx] Request received with form data: {request.form}")
-    if 'user_email' not in session:
+    if not get_authenticated_user():
         return "Brak autoryzacji", 401
     
     content = request.form.get('content', '')
@@ -2816,9 +2924,9 @@ def export_docx():
     )
 
 @app.route('/export/pdf', methods=['POST'])
+@csrf.exempt
 def export_pdf():
-    print
-    if 'user_email' not in session:
+    if not get_authenticated_user():
         return "Brak autoryzacji", 401
         
     content = request.form.get('content', '')
@@ -2885,50 +2993,60 @@ def export_pdf():
         download_name=f'{title}.pdf'
     )
 
-@app.route('/change-password', methods=['GET', 'POST'])
-def change_password():
-    print
-    if 'user_email' not in session:
-        flash('Musisz się zalogować, aby zmienić hasło.', 'danger')
-        return redirect(url_for('login'))
-        
-    if request.method == 'POST':
-        current_password = request.form.get('current_password')
-        new_password = request.form.get('new_password')
-        confirm_new_password = request.form.get('confirm_new_password')
-        
-        email = session['user_email']
-        
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT password_hash FROM users WHERE email = ?", (email,))
-        user = cursor.fetchone()
-        
-        pwd_error = validate_password_strength(new_password)
-        if not user or not check_password_hash(user[0], current_password):
-            flash('Aktualne hasło jest niepoprawne.', 'danger')
-            conn.close()
-        elif new_password != confirm_new_password:
-            flash('Nowe hasła nie są identyczne.', 'danger')
-            conn.close()
-        elif pwd_error:
-            flash(pwd_error, 'danger')
-            conn.close()
-        else:
-            new_hashed = generate_password_hash(new_password)
-            cursor.execute("UPDATE users SET password_hash = ? WHERE email = ?", (new_hashed, email))
-            conn.commit()
-            conn.close()
-            flash('Hasło zostało pomyślnie zmienione!', 'success')
-            return redirect(url_for('index_page'))
-            
-    return render_template('zmiana-hasla.html')
 
-@app.route('/logout')
-def logout():
-    session.pop('user_email', None)
-    flash('Wylogowano pomyślnie.', 'success')
-    return redirect(url_for('login'))
+# ─── API Key management ────────────────────────────────────────────────────────
+@app.route('/api/keys', methods=['GET'])
+def list_api_keys():
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT id, name, allowed_origin, created_at, last_used_at FROM api_keys WHERE user_email = ? ORDER BY created_at DESC",
+        (user_email,)
+    ).fetchall()
+    conn.close()
+    return jsonify({"keys": [dict(r) for r in rows]})
+
+@app.route('/api/keys', methods=['POST'])
+@csrf.exempt
+def create_api_key():
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    data = request.get_json(silent=True) or {}
+    name = str(data.get('name', '') or '').strip()[:80] or 'Klucz API'
+    allowed_origin = str(data.get('allowed_origin', '') or '').strip()[:255]
+    conn = get_db_connection()
+    count = conn.execute("SELECT COUNT(*) FROM api_keys WHERE user_email = ?", (user_email,)).fetchone()[0]
+    if count >= 10:
+        conn.close()
+        return jsonify({"error": "Maksymalna liczba kluczy API to 10"}), 400
+    raw_key = 'stt_' + secrets.token_urlsafe(32)
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    cursor = conn.execute(
+        "INSERT INTO api_keys (user_email, key_hash, name, allowed_origin) VALUES (?, ?, ?, ?)",
+        (user_email, key_hash, name, allowed_origin)
+    )
+    key_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({"id": key_id, "name": name, "allowed_origin": allowed_origin, "key": raw_key}), 201
+
+@app.route('/api/keys/<int:key_id>', methods=['DELETE'])
+@csrf.exempt
+def delete_api_key(key_id):
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    conn = get_db_connection()
+    result = conn.execute(
+        "DELETE FROM api_keys WHERE id = ? AND user_email = ?", (key_id, user_email)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"deleted": result.rowcount > 0})
+
 
 if __name__ == '__main__':
     server_host = '0.0.0.0'

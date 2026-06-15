@@ -60,7 +60,7 @@
         <section class="section">
             <div class="section-header">
                 <div>
-                    <h2>Klucze API</h2>
+                    <h2>Klucze API dostawców</h2>
                     <p class="muted">Wymagane nazwy zmiennych: `GROQ_API_KEY` oraz `OPENAI_API_KEY`.</p>
                 </div>
                 <div class="key-status">
@@ -73,9 +73,63 @@
                 <div>
                     Zmień motyw <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button>
                 </div>
-
             </div>
         </section>
+
+        <!-- ── Klucze API użytkownika ── -->
+        <section class="section" id="api-keys-section">
+            <div class="section-header">
+                <div>
+                    <h2>Klucze API</h2>
+                    <p class="muted">Klucze do autoryzacji zewnętrznych serwisów. Klucz jest widoczny tylko raz po wygenerowaniu.</p>
+                </div>
+                <button class="btn" id="new-key-btn" onclick="openNewKeyModal()">+ Nowy klucz</button>
+            </div>
+            <div class="section-body">
+                <div id="new-key-banner" style="display:none; margin-bottom:12px; padding:12px 14px; border:1px solid rgba(16,185,129,0.3); border-radius:8px;">
+                    <div style="font-size:12px; color:var(--green); font-weight:700; margin-bottom:6px;">Nowy klucz API — skopiuj teraz, nie zostanie pokazany ponownie</div>
+                    <div style="display:flex; align-items:flex-start; gap:8px;flex-direction: column;">
+                        <code id="new-key-value" style="flex:1; font-size:13px; word-break:break-all; color:var(--text-primary); background:var(--bg-control); padding:8px 10px; border-radius:6px;"></code>
+                        <button class="btn" onclick="copyNewKey()" style="flex-shrink:0;">Kopiuj</button>
+                    </div>
+                </div>
+                <table id="api-keys-table" style="display:none;">
+                    <thead>
+                        <tr>
+                            <th>Nazwa</th>
+                            <th>Domena</th>
+                            <th>Utworzono</th>
+                            <th>Ostatnie użycie</th>
+                            <th style="width:40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="api-keys-tbody"></tbody>
+                </table>
+                <p id="api-keys-empty" class="muted" style="padding:8px 0;">Brak kluczy API. Wygeneruj pierwszy klucz.</p>
+            </div>
+        </section>
+
+        <!-- Modal: nowy klucz API -->
+        <div id="new-key-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+            <div style="background:var(--bg-base); border:1px solid var(--border-color); border-radius:12px; padding:24px; width:min(420px,90vw); box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+                <h3 style="margin:0 0 16px; font-size:16px;">Nowy klucz API</h3>
+                <div style="margin-bottom:14px;">
+                    <label style="display:block; font-size:13px; color:var(--text-muted); margin-bottom:4px;">Nazwa klucza</label>
+                    <input id="modal-key-name" type="text" placeholder="np. n8n produkcja" maxlength="80"
+                           style="width:100%; box-sizing:border-box; padding:8px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-control); color:var(--text-primary); font-size:14px;">
+                </div>
+                <div style="margin-bottom:20px;">
+                    <label style="display:block; font-size:13px; color:var(--text-muted); margin-bottom:4px;">Dozwolona domena <span style="opacity:.5;">(opcjonalnie)</span></label>
+                    <input id="modal-key-origin" type="text" placeholder="np. https://example.com" maxlength="255"
+                           style="width:100%; box-sizing:border-box; padding:8px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-control); color:var(--text-primary); font-size:14px;">
+                    <p style="margin:5px 0 0; font-size:11px; color:var(--text-muted);">Jeśli podasz domenę, klucz będzie działał tylko z requestów z tego źródła (nagłówek Origin / Referer). Puste = brak ograniczenia.</p>
+                </div>
+                <div style="display:flex; gap:8px; justify-content:flex-end;">
+                    <button class="btn" onclick="closeNewKeyModal()" style="background:var(--bg-control);">Anuluj</button>
+                    <button class="btn" onclick="generateApiKey()" style="background:var(--purple); color:#fff;">Generuj klucz</button>
+                </div>
+            </div>
+        </div>
 
         <section class="section" id="local-models">
             <div class="section-header">
@@ -715,6 +769,103 @@
 function openOverlay(id)  { document.getElementById(id).classList.add('open'); }
 function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
 function openSidebar()    { openOverlay('ov-sidebar'); }
+
+// ── API Keys ──────────────────────────────────────────────────────────────────
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').content;
+}
+
+function renderApiKeys(keys) {
+    var tbody = document.getElementById('api-keys-tbody');
+    var table = document.getElementById('api-keys-table');
+    var empty = document.getElementById('api-keys-empty');
+    tbody.innerHTML = '';
+    if (!keys.length) {
+        table.style.display = 'none';
+        empty.style.display = '';
+        return;
+    }
+    table.style.display = '';
+    empty.style.display = 'none';
+    keys.forEach(function(k) {
+        var tr = document.createElement('tr');
+        var domainCell = k.allowed_origin
+            ? '<span style="font-size:11px; background:rgba(139,92,246,0.12); color:var(--purple); padding:2px 6px; border-radius:4px;">' + escHtml(k.allowed_origin) + '</span>'
+            : '<span style="font-size:11px; color:var(--text-muted);">bez ograniczenia</span>';
+        tr.innerHTML =
+            '<td>' + escHtml(k.name) + '</td>' +
+            '<td>' + domainCell + '</td>' +
+            '<td class="mono" style="font-size:12px;">' + (k.created_at || '').slice(0, 16) + '</td>' +
+            '<td class="mono" style="font-size:12px;">' + (k.last_used_at ? k.last_used_at.slice(0, 16) : '—') + '</td>' +
+            '<td><button onclick="deleteApiKey(' + k.id + ', this)" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;" title="Usuń">✕</button></td>';
+        tbody.appendChild(tr);
+    });
+}
+
+function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+}
+
+function loadApiKeys() {
+    fetch('/api/keys').then(function(r) { return r.json(); }).then(function(d) {
+        renderApiKeys(d.keys || []);
+    });
+}
+
+function openNewKeyModal() {
+    document.getElementById('modal-key-name').value = '';
+    document.getElementById('modal-key-origin').value = '';
+    document.getElementById('new-key-modal').style.display = 'flex';
+    document.getElementById('modal-key-name').focus();
+}
+
+function closeNewKeyModal() {
+    document.getElementById('new-key-modal').style.display = 'none';
+}
+
+function generateApiKey() {
+    var name = document.getElementById('modal-key-name').value.trim() || 'Klucz API';
+    var origin = document.getElementById('modal-key-origin').value.trim();
+    closeNewKeyModal();
+    fetch('/api/keys', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: name, allowed_origin: origin})
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.error) { alert(d.error); return; }
+        document.getElementById('new-key-value').textContent = d.key;
+        document.getElementById('new-key-banner').style.display = '';
+        loadApiKeys();
+    });
+}
+
+function copyNewKey() {
+    var val = document.getElementById('new-key-value').textContent;
+    navigator.clipboard.writeText(val).then(function() {
+        alert('Skopiowano do schowka.');
+    });
+}
+
+function deleteApiKey(id, btn) {
+    if (!confirm('Usunąć ten klucz API? Operacja jest nieodwracalna.')) return;
+    fetch('/api/keys/' + id, {method: 'DELETE'})
+        .then(function(r) { return r.json(); })
+        .then(function() { loadApiKeys(); });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadApiKeys();
+    document.getElementById('new-key-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeNewKeyModal();
+    });
+    document.getElementById('modal-key-origin').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') generateApiKey();
+    });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 function toggleTheme() {
     var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
