@@ -229,6 +229,13 @@ html {
     border-color: var(--purple);
     color: var(--text-primary);
 }
+.mode-pill--action {
+    border-color: rgba(59, 130, 246, 0.4);
+    color: var(--blue);
+}
+.mode-pill--action:active {
+    background: rgba(59, 130, 246, 0.15);
+}
 
 /* ═══════════════════════════════════════
    BUTTONS

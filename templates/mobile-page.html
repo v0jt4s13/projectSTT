@@ -302,6 +302,7 @@
                 <button class="mode-pill" data-mode="bullets">Lista punktów</button>
                 <button class="mode-pill" data-mode="prompt">Prompt AI</button>
                 <button class="mode-pill" data-mode="reel-prepare">Przygotuj rolkę</button>
+                <button class="mode-pill mode-pill--action" data-mode="auth-analysis">🔍 Analiza autentyczności</button>
             </div>
         </div>
 
@@ -845,6 +846,9 @@
                 refreshTranscScreen();
                 refreshNotesScreen();
                 if (activeRecordId) enableChat();
+                if (activeRecordId && selectedNotesMode === 'auth-analysis') {
+                    startAuthenticityAnalysis();
+                }
 
                 setProcessing(false);
                 showToast('✓ Przetworzono pomyślnie');
@@ -1005,6 +1009,18 @@
         document.getElementById('chat-input').value = prompt;
         pendingAuthScore = true;
         return true;
+    }
+
+    function startAuthenticityAnalysis() {
+        nav('chat');
+        document.getElementById('chat-empty').style.display = 'none';
+        document.getElementById('chat-input').value =
+            'Przeanalizuj autentyczność informacji zawartych w tej transkrypcji. ' +
+            'Sprawdź fakty i twierdzenia pod kątem wiarygodności. ' +
+            'Odpowiedź podaj zwięźle — przy każdym twierdzeniu podaj adres URL weryfikującego źródła. ' +
+            'Na końcu napisz: „Jeśli chcesz, mogę przygotować bardziej szczegółową analizę."';
+        pendingAuthScore = true;
+        sendChat();
     }
 
     function enableChat() {
@@ -1336,7 +1352,7 @@
 
     async function delHistItem(id, event) {
         event.stopPropagation();
-        if (!histRecentIds.has(id) && !confirm('Usunąć ten wpis z historii?')) return;
+        if (histRecentIds.has(id) && !confirm('Usunąć ten wpis z historii?')) return;
         const res = await fetch(`${BASE}/delete-history/${id}`, { method: 'DELETE', headers: {'X-CSRFToken': getCsrfToken()} });
         if (res.ok) {
             if (activeRecordId === id) {
