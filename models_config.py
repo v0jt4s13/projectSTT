@@ -1,4 +1,6 @@
+import json
 import os
+import time
 
 # ── Providers ─────────────────────────────────────────────────────────────────
 
@@ -238,6 +240,112 @@ LOCAL_MODEL_REQUIREMENTS = [
         "notes": ["Wymaga uruchomionej usługi Ollama.", "Jeśli Ollama nie działa, aplikacja zwróci komunikat o braku lokalnych notatek AI."]
     }
 ]
+
+# ── Model pricing (USD per 1 million tokens) ─────────────────────────────────
+# input / output prices; audio-only models (whisper-*) billed per minute – omitted here.
+
+MODEL_PRICING = {
+    # OpenAI text models
+    "gpt-4o-mini":            {"input": 0.15,  "output": 0.60},
+    "gpt-4o":                 {"input": 2.50,  "output": 10.00},
+    "gpt-4o-search-preview":  {"input": 2.50,  "output": 10.00},
+    "gpt-4.1":                {"input": 2.00,  "output": 8.00},
+    "gpt-4.1-mini":           {"input": 0.40,  "output": 1.60},
+    "gpt-4.1-nano":           {"input": 0.10,  "output": 0.40},
+    "gpt-5":                  {"input": 3.00,  "output": 15.00},
+    "gpt-5.4":                {"input": 3.00,  "output": 15.00},
+    "gpt-5.5":                {"input": 5.00,  "output": 25.00},
+    # OpenAI transcription models (token-based billing)
+    "gpt-4o-transcribe":      {"input": 2.50,  "output": 10.00},
+    "gpt-4o-mini-transcribe": {"input": 0.15,  "output": 0.60},
+    # Groq text models
+    "llama-3.3-70b-versatile":                    {"input": 0.59, "output": 0.79},
+    "llama-3.1-8b-instant":                       {"input": 0.05, "output": 0.08},
+    "openai/gpt-oss-120b":                        {"input": 0.90, "output": 0.90},
+    "openai/gpt-oss-20b":                         {"input": 0.60, "output": 0.60},
+    "qwen/qwen3-32b":                             {"input": 0.29, "output": 0.59},
+    "meta-llama/llama-4-scout-17b-16e-instruct":  {"input": 0.11, "output": 0.34},
+}
+
+# Audio transcription pricing (USD per minute) — for models billed by duration, not tokens.
+AUDIO_PRICING = {
+    # OpenAI
+    "whisper-1":                       0.006,
+    # Groq (converted from per-hour rates)
+    "whisper-large-v3":                0.111 / 60,
+    "distil-whisper-large-v3-en":      0.020 / 60,
+    "whisper-large-v3-turbo":          0.04  / 60,
+}
+
+def resolve_pricing_key(model_name):
+    """Return the MODEL_PRICING key matching model_name (exact, then longest prefix)."""
+    if not model_name:
+        return None
+    if model_name in MODEL_PRICING:
+        return model_name
+    best = None
+    for key in MODEL_PRICING:
+        if model_name.startswith(key) and (best is None or len(key) > len(best)):
+            best = key
+    return best
+
+
+def get_audio_duration_seconds(file_path):
+    """Return audio duration in seconds via ffprobe, or None on failure."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", file_path],
+            capture_output=True, text=True, timeout=10
+        )
+        return float(result.stdout.strip())
+    except Exception:
+        return None
+
+def get_audio_cost(model_name, seconds):
+    """Return USD cost for duration-billed audio transcription."""
+    if not model_name or not seconds:
+        return 0.0
+    if model_name in AUDIO_PRICING:
+        return seconds / 60.0 * AUDIO_PRICING[model_name]
+    for key in AUDIO_PRICING:
+        if model_name.startswith(key):
+            return seconds / 60.0 * AUDIO_PRICING[key]
+    return 0.0
+
+
+# ── Pricing overrides (pricing_data.json) ────────────────────────────────────
+
+PRICING_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pricing_data.json')
+
+def load_pricing_data():
+    """Return (prices_dict, last_updated_timestamp) from pricing_data.json."""
+    if not os.path.exists(PRICING_DATA_FILE):
+        return {}, None
+    try:
+        with open(PRICING_DATA_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get('prices', {}), data.get('last_updated')
+    except Exception:
+        return {}, None
+
+def save_pricing_data(prices, timestamp=None):
+    """Write pricing overrides + timestamp to pricing_data.json."""
+    if timestamp is None:
+        timestamp = time.time()
+    with open(PRICING_DATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump({'last_updated': timestamp, 'prices': prices}, f, indent=2)
+
+def get_effective_model_pricing():
+    """Return MODEL_PRICING merged with any stored overrides from pricing_data.json."""
+    overrides, _ = load_pricing_data()
+    if not overrides:
+        return MODEL_PRICING
+    result = dict(MODEL_PRICING)
+    result.update(overrides)
+    return result
+
 
 # ── Provider helpers ──────────────────────────────────────────────────────────
 

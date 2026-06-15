@@ -34,6 +34,9 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+# ADMIN_EMAIL = 'test@marzec.eu'
+ADMIN_EMAIL = 'wmarzec@gmail.com'
+
 def parse_startup_args():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
@@ -76,8 +79,12 @@ def load_env_file(path='.env'):
 
 load_env_file()
 
+from server_restart import restart_server
 from models_config import (
     PROVIDERS, MODEL_TYPES, MODEL_CATALOG, LOCAL_MODEL_REQUIREMENTS, DEFAULT_AI_MODELS,
+    MODEL_PRICING, AUDIO_PRICING, resolve_pricing_key,
+    get_effective_model_pricing, load_pricing_data, save_pricing_data, PRICING_DATA_FILE,
+    get_audio_duration_seconds, get_audio_cost,
     get_provider_label, get_provider_api_key, get_provider_env_key, require_provider_api_key,
     raise_invalid_api_key_error, raise_provider_api_error,
     describe_cloud_model, describe_local_notes_model, describe_notes_model, describe_chat_answer_model,
@@ -276,7 +283,10 @@ def extract_openai_usage(response, operation_name):
         ("usage", "completion_tokens_details", "reasoning_tokens")
     ])
     usage_type = first_available_from_sources(sources, [("usage", "type")])
-    seconds = first_available_from_sources(sources, [("usage", "seconds")])
+    seconds = first_available_from_sources(sources, [
+        ("usage", "seconds"),
+        ("duration",),
+    ])
 
     return {
         "datetime": datetime.now(timezone.utc).isoformat(),
@@ -331,6 +341,29 @@ def parse_openai_usage_history(value):
     except (TypeError, ValueError):
         return []
     return parsed if isinstance(parsed, list) else []
+
+def compute_token_summary(usage_record_lists):
+    """Sum input/output tokens across multiple usage-record lists and estimate cost."""
+    total_input = 0
+    total_output = 0
+    cost_usd = 0.0
+    for records in usage_record_lists:
+        for rec in (records or []):
+            inp  = int(rec.get("input_tokens")  or 0)
+            out  = int(rec.get("output_tokens") or 0)
+            secs = float(rec.get("seconds") or 0)
+            total_input  += inp
+            total_output += out
+            if inp or out:
+                pricing_key = resolve_pricing_key(rec.get("model") or "")
+                pricing = get_effective_model_pricing().get(pricing_key) if pricing_key else None
+                if pricing:
+                    cost_usd += inp * pricing["input"] / 1_000_000
+                    cost_usd += out * pricing["output"] / 1_000_000
+            elif secs:
+                cost_usd += get_audio_cost(rec.get("model") or "", secs)
+    return {"input": total_input, "output": total_output, "cost_usd": round(cost_usd, 6)}
+
 
 def model_row_to_dict(row):
     model = dict(row)
@@ -557,20 +590,44 @@ def transcribe_with_cloud(model_config, file_path, language):
                     transcription_options["language"] = language
 
                 transcription = client.audio.transcriptions.create(**transcription_options)
-                return transcription.text
+
+            duration = get_audio_duration_seconds(file_path)
+            if duration is not None:
+                usage_record = {
+                    "datetime": datetime.now(timezone.utc).isoformat(),
+                    "operation": "transcription",
+                    "model": model_config["model_id"],
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "total_tokens": None,
+                    "cached_tokens": None,
+                    "reasoning_tokens": None,
+                    "usage_type": "audio",
+                    "seconds": duration,
+                    "usage": {"seconds": duration},
+                }
+                append_openai_usage_to_request(usage_record)
+                try:
+                    append_openai_usage_to_file(usage_record)
+                except Exception:
+                    pass
+
+            return transcription.text
         except Exception as error:
             raise_provider_api_error(provider, error)
 
     if provider == "openai":
+        model_id = model_config["model_id"]
         with open(file_path, "rb") as audio_file:
             files = {
                 "file": (os.path.basename(file_path), audio_file)
             }
-            data = {
-                "model": model_config["model_id"]
-            }
+            data = {"model": model_id}
             if language != "auto":
                 data["language"] = language
+            # whisper-1 is billed per minute; verbose_json includes the duration field
+            if model_id == "whisper-1":
+                data["response_format"] = "verbose_json"
 
             response = requests.post(
                 "https://api.openai.com/v1/audio/transcriptions",
@@ -581,6 +638,7 @@ def transcribe_with_cloud(model_config, file_path, language):
             )
             raise_for_openai_error(response)
             payload = response.json()
+            payload.setdefault("model", model_id)
             record_openai_usage(payload, "transcription")
             return payload.get("text", "")
 
@@ -733,18 +791,16 @@ def build_web_search_question_prompt(transcription, context_rows, question):
     history_text = "\n".join(previous_messages) if previous_messages else "Brak wcześniejszej rozmowy."
 
     return (
-        "Jesteś asystentem analizującym transkrypcję nagrania. Odpowiadaj po polsku.\n"
+        "Jesteś asystentem odpowiadającym na pytania. Odpowiadaj po polsku.\n"
         "Masz dostęp do narzędzia web_search. Używaj go wtedy, gdy pytanie wymaga aktualnych, "
-        "zewnętrznych lub weryfikowalnych informacji spoza transkrypcji. Jeśli odpowiedź wynika "
+        "zewnętrznych lub weryfikowalnych informacji. Jeśli odpowiedź wynika "
         "wyłącznie z transkrypcji, oprzyj się na transkrypcji i jasno to zaznacz.\n"
         "Nie zmyślaj faktów. Nie dodawaj własnych tez ani teorii. Opieraj sie na dowodach, faktach i stanach faktycznych.\n"
         "Gdy korzystasz z internetu, wskaż źródła i podaj: domenę / autora / date publikacji jeżeli dostępne.\n\n"
         "Kontekst poprzedniej rozmowy:\n"
         f"{history_text}\n\n"
-        "Transkrypcja nagrania:\n"
-        f"{transcription}\n\n"
-        "Pytanie użytkownika:\n"
-        f"{question}"
+        + (f"Transkrypcja nagrania:\n{transcription}\n\n" if transcription else "")
+        + f"Pytanie użytkownika:\n{question}"
     )
 
 def analyze_with_web_search(response_prompt, model_config=None):
@@ -973,6 +1029,28 @@ def download_youtube_audio(youtube_url):
             "webpage_url": info.get("webpage_url") or youtube_url
         }
 
+def _is_multi_url_text(text):
+    """True gdy każda niepusta linia zaczyna się od http:// lub https://"""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    return len(lines) >= 1 and all(l.startswith('http://') or l.startswith('https://') for l in lines)
+
+def fetch_multi_url_content(text):
+    """Pobiera treść każdego URL z tekstu i łączy wyniki."""
+    urls = [l.strip() for l in text.splitlines() if l.strip()]
+    parts = []
+    titles = []
+    for url in urls:
+        try:
+            content, title = fetch_webpage_content(url)
+            parts.append(f"=== Źródło: {title or url} ===\n{content}")
+            titles.append(title or url)
+        except Exception as exc:
+            app.logger.warning("[multi-url] Błąd pobierania %s: %s", url, exc)
+            parts.append(f"=== Błąd pobierania {url}: {exc} ===")
+    combined = "\n\n".join(parts)
+    display = f"Synteza {len(urls)} źródeł" if len(urls) > 1 else (titles[0] if titles else urls[0])
+    return combined, display
+
 def fetch_webpage_content(url):
     _assert_safe_url(url)
     headers = {'User-Agent': 'Mozilla/5.0 (compatible; projectSTT/1.0)'}
@@ -995,7 +1073,91 @@ def fetch_webpage_content(url):
     return '\n'.join(lines), page_title
 
 # Funkcja budująca prompt dla generowania notatek AI z transkrypcji audio
-def build_audio_notes_prompt(raw_text):
+def build_audio_notes_prompt(raw_text, mode='full'):
+    if mode == 'reel-prepare':
+        # ── TUTAJ WPISZ SWÓJ PROMPT DLA TRYBU "PRZYGOTUJ ROLKĘ" ──────────────
+        # Przykład struktury:
+        #   return (
+        #       "Jesteś twórcą treści wideo. Na podstawie poniższego tekstu...\n\n"
+        #       f"Tekst:\n{raw_text}"
+        #   )
+        # ─────────────────────────────────────────────────────────────────────
+
+        # phase=content → tylko generacja treści (short_text) + zapis na S3
+        # phase=audio → tylko audio/SRT (wywołanie /api/news-to-video-generator z audio_only=true)
+        # phase=shotstack_stage → tylko payload do stage
+        # phase=shotstack_prod → tylko payload do prod
+        # phase=all → pełny pipeline
+
+        # raw_text_prompt = "Na podstawie dostarczonych materiałów, przygotuj zwięzłą i angażującą rolkę wideo (Reel) na YouTube lub wskazaną platformę.\n"
+        # "Rolka powinna mieć do 30 sekund długości lub do wskazanej w transkrypcji długości i zawierać najważniejsze, najbardziej interesujące lub zaskakujące informacje z tekstu. \n"
+        # "Skup się na tym, co może przyciągnąć uwagę widzów. Na konic zachęć ich do dalszego zgłębiania tematu. Nie ograniczaj się do prostego streszczenia — poszukaj unikalnych, intrygujących fragmentów, które wyróżniają się w tekście.\n"
+        # "Odpowiedz wyłącznie gotowym scenariuszem rolki, bez żadnych dodatkowych wstępów, komentarzy czy wyjaśnień. Użyj języka polskiego i formatu, który łatwo można przekształcić w dynamiczną, wizualnie atrakcyjną rolkę wideo.\n"
+        # "Dołącz do textu adresy url możliwych do wykorzystania obrazów lub grafik pochodzących z dostarczonych źródeł.\n"
+        return (
+            "Na podstawie poniższego tekstu przygotuj payload JSON do generowania rolki wideo.\n"
+            "Dla treści z domeny londynek.net wydobądź section i id z URL artykułu.\n"
+            "Przykład mapowania URL `https://londynek.net/wiadomosci/article?jdnews_id=111425`: section=wiadomosci, id=111425.\n"
+            "Dozwolone wartości section: wiadomosc, czytelnia, newslajt, poradnik, ogloszenia, wydarzenia.\n"
+            "Domyślny rozmiar: 9x16. Domyślna phase: shotstack_stage.\n\n"
+            "Zwróć WYŁĄCZNIE poprawny JSON (bez żadnego opisu, komentarza ani markdown), w formacie:\n"
+            "{\n"
+            "  \"section\": \"<section>\",\n"
+            "  \"id\": \"<id_artykulu>\",\n"
+            "  \"size\": \"9x16\",\n"
+            "  \"email\": \"reels@marzec.eu\",\n"
+            "  \"voice\": \"Microsoft Server Speech Text to Speech Voice (pl-PL, AgnieszkaNeural)\",\n"
+            "  \"provider\": \"microsoft\",\n"
+            "  \"style_preset\": \"standard_9x16\",\n"
+            "  \"app_mode\": \"dev\",\n"
+            "  \"phase\": \"shotstack_stage\"\n"
+            "}\n\n"
+            f"Tekst:\n{raw_text}"
+        )
+    if mode == 'prompt':
+        return (
+            "Jesteś ekspertem w konstruowaniu promptów dla dużych modeli językowych. "
+            "Przeczytaj uważnie poniższy tekst i na jego podstawie wygeneruj gotowy, "
+            "wysokiej jakości prompt w języku polskim, który użytkownik może wkleić bezpośrednio do dowolnego modelu AI.\n\n"
+            "Wygenerowany prompt MUSI:\n"
+            "1. Zawierać **precyzyjnie sformułowane pytanie lub zadanie** wynikające z treści tekstu — "
+            "tak, aby model AI wiedział dokładnie, czego oczekujesz.\n"
+            "2. Zawierać sekcję **KONTEKST** z najważniejszymi informacjami wyciągniętymi z tekstu "
+            "(minimum faktów niezbędnych do udzielenia wartościowej odpowiedzi).\n"
+            "3. Zawierać sekcję **MUST-HAVE ŹRÓDŁA** — listę konkretnych typów źródeł lub serwisów, "
+            "które model POWINIEN przeszukać lub uwzględnić, aby odpowiedź była wiarygodna i aktualna. "
+            "Dobierz źródła odpowiednio do tematu tekstu (np. bazy naukowe, serwisy informacyjne, "
+            "oficjalne strony instytucji, repozytoria kodu, encyklopedie, fora branżowe itp.).\n"
+            "4. Być sformatowany czytelnie dla modelu: używaj nagłówków Markdown (###), "
+            "list punktowanych i pogrubień tam, gdzie zwiększają przejrzystość.\n\n"
+            "Zwróć WYŁĄCZNIE gotowy prompt — bez żadnego wstępu, komentarza ani wyjaśnienia z Twojej strony.\n\n"
+            f"Tekst źródłowy:\n{raw_text}"
+        )
+    if mode == 'summary':
+        return (
+            "Jesteś profesjonalnym asystentem. Przeczytaj poniższy tekst "
+            "i napisz KRÓTKIE STRESZCZENIE w języku polskim (maksymalnie 5 zdań). "
+            "Skup się wyłącznie na najważniejszych informacjach. "
+            "Nie stosuj nagłówków ani list.\n\n"
+            f"Tekst:\n{raw_text}"
+        )
+    if mode == 'overview':
+        return (
+            "Jesteś profesjonalnym asystentem. Przeczytaj poniższy tekst "
+            "i napisz KRÓTKIE OMÓWIENIE w języku polskim. "
+            "Omów główne tematy, wnioski i kontekst w 2-4 czytelnych akapitach. "
+            "Nie stosuj list punktowanych ani sekcji zadań.\n\n"
+            f"Tekst:\n{raw_text}"
+        )
+    if mode == 'bullets':
+        return (
+            "Jesteś profesjonalnym asystentem. Przeczytaj poniższy tekst "
+            "i wypisz LISTĘ NAJWAŻNIEJSZYCH PUNKTÓW w języku polskim. "
+            "Każdy punkt zacznij od myślnika (-). Wypisz od 5 do 10 kluczowych punktów. "
+            "Odpowiedz TYLKO listą — bez wstępu i komentarzy.\n\n"
+            f"Tekst:\n{raw_text}"
+        )
+    # mode == 'full' — domyślny pełny prompt
     # print(f"[build_audio_notes_prompt] START => raw_text len: {len(raw_text)}")
 
     how_to_use_web_search_prompt = """Jeśli odpowiedź może być udzielona na podstawie transkrypcji i nie wymaga użycia źródeł zewnętrznych, jasno to zaznacz.
@@ -1087,12 +1249,11 @@ def extract_authenticity_score(notes_text):
     return max(0, min(100, int(match.group(1))))
 
 
-def generate_audio_notes(raw_text, processing_mode, preferred_provider=None, model_used=None):
-    # print(f"[generate_audio_notes] START => raw_text len: {len(raw_text)}, processing_mode: {processing_mode}, preferred_provider: {preferred_provider}, model_used: {model_used}")
+def generate_audio_notes(raw_text, processing_mode, preferred_provider=None, model_used=None, notes_mode='full'):
     if not raw_text.strip():
         return "", None
 
-    prompt = build_audio_notes_prompt(raw_text)
+    prompt = build_audio_notes_prompt(raw_text, mode=notes_mode)
     # print(f"[generate_audio_notes] Built prompt len: {len(prompt)} ==> {prompt}\n\n")
 
     if processing_mode == "online":
@@ -1115,7 +1276,7 @@ def get_default_processing_mode():
     return "offline" if LOCAL_MODELS_ENABLED else "online"
 
 # Główna funkcja obsługująca transkrypcję audio i generowanie notatek AI
-def process_audio_transcription(file_path, processing_mode='offline', model_name='base', cloud_model_id=None, language='auto', task='transcribe'):
+def process_audio_transcription(file_path, processing_mode='offline', model_name='base', cloud_model_id=None, language='auto', task='transcribe', notes_mode='full'):
     processing_mode = normalize_processing_mode(processing_mode)
     model_name = str(model_name or "base").strip()
     language = str(language or "auto").strip()
@@ -1134,7 +1295,8 @@ def process_audio_transcription(file_path, processing_mode='offline', model_name
             raw_text,
             processing_mode,
             preferred_provider=transcription_model["provider"],
-            model_used=str(model_name or cloud_model_id).strip()
+            model_used=str(model_name or cloud_model_id).strip(),
+            notes_mode=notes_mode
         )
 
         return {
@@ -1159,7 +1321,7 @@ def process_audio_transcription(file_path, processing_mode='offline', model_name
 
     result = model.transcribe(file_path, **options)
     raw_text = result["text"]
-    notes, _ = generate_audio_notes(raw_text, processing_mode, preferred_provider=None, model_used=model_name)
+    notes, _ = generate_audio_notes(raw_text, processing_mode, preferred_provider=None, model_used=model_name, notes_mode=notes_mode)
 
     return {
         "text": raw_text,
@@ -1527,6 +1689,149 @@ def mobile_page():
     )
 
 
+@app.route('/usage-history', methods=['GET'])
+def usage_history():
+    if 'user_email' not in session:
+        return redirect(url_for('login'))
+
+    session_email = session['user_email']
+    is_admin      = session_email == ADMIN_EMAIL
+
+    # Admin can view any user's stats via ?view=email, or all users via ?view=__all__
+    view_email = request.args.get('view', '').strip() or session_email
+    if not is_admin:
+        view_email = session_email  # non-admins always see themselves
+
+    def _eb():
+        return {"input": 0, "output": 0, "cost": 0.0}
+
+    def _fetch_records(conn, email_filter=None):
+        c = conn.cursor()
+        if email_filter:
+            c.execute(
+                "SELECT openai_usage_history FROM history "
+                "WHERE user_email = ? AND openai_usage_history != ''",
+                (email_filter,)
+            )
+        else:
+            c.execute("SELECT openai_usage_history FROM history WHERE openai_usage_history != ''")
+        raws = c.fetchall()
+        if email_filter:
+            c.execute(
+                """SELECT ch.openai_usage_history FROM chat_history ch
+                   JOIN history h ON ch.record_id = h.id
+                   WHERE h.user_email = ? AND ch.openai_usage_history != ''""",
+                (email_filter,)
+            )
+        else:
+            c.execute(
+                """SELECT ch.openai_usage_history FROM chat_history ch
+                   JOIN history h ON ch.record_id = h.id
+                   WHERE ch.openai_usage_history != ''"""
+            )
+        raws += c.fetchall()
+        records = []
+        for (raw,) in raws:
+            records.extend(parse_openai_usage_history(raw))
+        return records
+
+    def _aggregate(records):
+        today_d = datetime.now(timezone.utc).date()
+        totals = _eb(); today_b = _eb(); last7 = _eb(); last30 = _eb()
+        by_day = {}; by_model = {}; by_op = {}
+
+        for rec in records:
+            inp  = int(rec.get("input_tokens")  or 0)
+            out  = int(rec.get("output_tokens") or 0)
+            secs = float(rec.get("seconds") or 0)
+            model = (rec.get("model") or "unknown").strip()
+            op    = (rec.get("operation") or "unknown").strip()
+            if inp or out:
+                pk = resolve_pricing_key(model)
+                pricing = get_effective_model_pricing().get(pk, {}) if pk else {}
+                cost = (inp * pricing.get("input", 0) + out * pricing.get("output", 0)) / 1_000_000
+            elif secs:
+                cost = get_audio_cost(model, secs)
+            else:
+                cost = 0.0
+            try:
+                rec_date = datetime.fromisoformat(
+                    (rec.get("datetime") or "").replace("Z", "+00:00")
+                ).date()
+            except Exception:
+                rec_date = today_d
+            delta = (today_d - rec_date).days
+
+            for b in [totals] + ([today_b] if delta == 0 else []) \
+                               + ([last7]   if delta < 7  else []) \
+                               + ([last30]  if delta < 30 else []):
+                b["input"] += inp; b["output"] += out; b["cost"] += cost
+
+            for d, key in [(by_day, rec_date.isoformat()), (by_model, model), (by_op, op)]:
+                if key not in d:
+                    d[key] = _eb()
+                d[key]["input"] += inp; d[key]["output"] += out; d[key]["cost"] += cost
+
+        active_days = max(len(by_day), 1)
+        return {
+            "totals":   totals,
+            "today":    today_b,
+            "last7":    last7,
+            "last30":   last30,
+            "daily_avg": {k: totals[k] / active_days for k in totals},
+            "by_day":    dict(sorted(by_day.items())),
+            "by_model":  dict(sorted(by_model.items(),  key=lambda x: -x[1]["cost"])),
+            "by_op":     dict(sorted(by_op.items(),     key=lambda x: -x[1]["cost"])),
+        }
+
+    conn = sqlite3.connect(DB_FILE)
+
+    cur = conn.cursor()
+    cur.execute("SELECT email, first_name, last_name FROM users WHERE email = ?", (session_email,))
+    _u = cur.fetchone()
+    current_user = {"email": _u[0], "first_name": _u[1], "last_name": _u[2]} if _u else {"email": session_email, "first_name": "", "last_name": ""}
+
+    # ── per-user leaderboard (admin only) ─────────────────────────────────────
+    user_leaderboard = []
+    all_users = []
+    if is_admin:
+        c = conn.cursor()
+        c.execute("SELECT email, first_name, last_name FROM users ORDER BY email")
+        all_users = [{"email": r[0], "name": f"{r[1]} {r[2]}".strip() or r[0]} for r in c.fetchall()]
+
+        for u in all_users:
+            recs = _fetch_records(conn, u["email"])
+            agg  = _aggregate(recs)
+            user_leaderboard.append({
+                "email":  u["email"],
+                "name":   u["name"],
+                "input":  agg["totals"]["input"],
+                "output": agg["totals"]["output"],
+                "cost":   agg["totals"]["cost"],
+            })
+        user_leaderboard.sort(key=lambda x: -x["cost"])
+
+    # ── selected view ──────────────────────────────────────────────────────────
+    email_filter = None if (is_admin and view_email == "__all__") else view_email
+    records = _fetch_records(conn, email_filter)
+    conn.close()
+
+    agg = _aggregate(records)
+    view_label = "Wszyscy użytkownicy" if view_email == "__all__" else view_email
+
+    return render_template(
+        'usage-history-page.html',
+        **agg,
+        model_pricing=get_effective_model_pricing(),
+        is_admin=is_admin,
+        view_email=view_email,
+        view_label=view_label,
+        all_users=all_users,
+        user_leaderboard=user_leaderboard,
+        user=current_user,
+    )
+
+
 @app.route('/settings', methods=['GET'])
 def settings():
     if 'user_email' not in session:
@@ -1542,6 +1847,13 @@ def settings():
         for provider, config in PROVIDERS.items()
     }
 
+    _, pricing_last_updated = load_pricing_data()
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute("SELECT email, first_name, last_name FROM users WHERE email = ?", (session['user_email'],))
+    _u = cur.fetchone()
+    conn.close()
+    current_user = {"email": _u[0], "first_name": _u[1], "last_name": _u[2]} if _u else {"email": session['user_email'], "first_name": "", "last_name": ""}
     return render_template(
         'settings.html',
         models=list_ai_models(),
@@ -1549,8 +1861,83 @@ def settings():
         model_types=MODEL_TYPES,
         model_catalog=MODEL_CATALOG,
         local_model_requirements=LOCAL_MODEL_REQUIREMENTS,
-        api_key_status=api_key_status
+        api_key_status=api_key_status,
+        model_pricing=get_effective_model_pricing(),
+        audio_pricing=AUDIO_PRICING,
+        pricing_last_updated=pricing_last_updated,
+        is_admin=(session.get('user_email') == ADMIN_EMAIL),
+        user=current_user,
     )
+
+@app.route('/admin/restart', methods=['POST'])
+def admin_restart():
+    if 'user_email' not in session:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    if session['user_email'] != ADMIN_EMAIL:
+        return jsonify({"error": "Brak uprawnień administratora"}), 403
+
+    try:
+        app.logger.warning("[admin/restart] Restart zainicjowany przez %s", session['user_email'])
+        restart_server()
+        return jsonify({"ok": True, "message": "Serwer restartuje się. Odśwież stronę za kilka sekund."})
+    except Exception as exc:
+        app.logger.error("[admin/restart] Nieoczekiwany błąd: %s", exc)
+        return jsonify({"error": f"Błąd: {exc}"}), 500
+
+@app.route('/settings/update-pricing', methods=['POST'])
+def update_pricing_route():
+    if 'user_email' not in session or session['user_email'] != ADMIN_EMAIL:
+        return jsonify({'ok': False, 'error': 'Brak uprawnień'}), 403
+
+    LITELLM_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
+    try:
+        resp = requests.get(LITELLM_URL, timeout=15)
+        resp.raise_for_status()
+        litellm_data = resp.json()
+    except Exception as exc:
+        return jsonify({'ok': False, 'error': f'Nie udało się pobrać cennika: {exc}'}), 502
+
+    current_overrides, _ = load_pricing_data()
+    effective = get_effective_model_pricing()
+
+    changes = []
+    new_overrides = dict(current_overrides)
+
+    for model_key in MODEL_PRICING:
+        # LiteLLM may use bare name, openai/ prefix, or groq/ prefix
+        litellm_entry = None
+        for candidate in [model_key, f'openai/{model_key}', f'groq/{model_key}']:
+            if candidate in litellm_data:
+                litellm_entry = litellm_data[candidate]
+                break
+        if not litellm_entry:
+            continue
+
+        inp_per_tok = litellm_entry.get('input_cost_per_token')
+        out_per_tok = litellm_entry.get('output_cost_per_token')
+        if inp_per_tok is None or out_per_tok is None:
+            continue
+
+        new_input  = round(float(inp_per_tok) * 1_000_000, 4)
+        new_output = round(float(out_per_tok) * 1_000_000, 4)
+        old_input  = effective.get(model_key, MODEL_PRICING[model_key])['input']
+        old_output = effective.get(model_key, MODEL_PRICING[model_key])['output']
+
+        if abs(new_input - old_input) > 0.001 or abs(new_output - old_output) > 0.001:
+            changes.append({
+                'model': model_key,
+                'old_input': old_input,  'new_input': new_input,
+                'old_output': old_output, 'new_output': new_output,
+            })
+            new_overrides[model_key] = {'input': new_input, 'output': new_output}
+
+    timestamp = None
+    if changes:
+        timestamp = datetime.now(timezone.utc).timestamp()
+        save_pricing_data(new_overrides, timestamp)
+
+    return jsonify({'ok': True, 'changes': changes, 'timestamp': timestamp})
+
 
 @app.route('/settings/models', methods=['POST'])
 def add_model():
@@ -1679,6 +2066,9 @@ def transcribe():
     language = request.form.get('language', 'auto')
     task = request.form.get('task', 'transcribe')
     custom_name = request.form.get('custom_name', '').strip()
+    notes_mode = request.form.get('notes_mode', 'full').strip()
+    if notes_mode not in {'full', 'summary', 'overview', 'bullets', 'prompt', 'reel-prepare'}:
+        notes_mode = 'full'
 
     file_path = None
     display_title = youtube_url or webpage_url or custom_name or "Przesłany plik"
@@ -1689,7 +2079,12 @@ def transcribe():
         if direct_text:
             if len(direct_text) < 3:
                 return jsonify({"error": "Tekst jest zbyt krótki"}), 400
-            display_title = custom_name if custom_name else "Tekst wklejony"
+            if _is_multi_url_text(direct_text):
+                combined, auto_title = fetch_multi_url_content(direct_text)
+                direct_text = combined
+                display_title = custom_name if custom_name else auto_title
+            else:
+                display_title = custom_name if custom_name else "Tekst wklejony"
         elif youtube_url:
             try:
                 app.logger.info("[transcribe] START ▶️YouTube 📥 try fetch_youtube_transcript dla %s", youtube_url)
@@ -1742,12 +2137,12 @@ def transcribe():
                 preferred_provider = selected_transcription_model["provider"] if selected_transcription_model else None
                 notatki_ai, notes_model = generate_audio_notes(
                     surowy_tekst, processing_mode,
-                    preferred_provider=preferred_provider, model_used=None
+                    preferred_provider=preferred_provider, model_used=None, notes_mode=notes_mode
                 )
                 notes_model_used = describe_notes_model(notes_model, processing_mode)
             else:
                 try:
-                    prompt = build_audio_notes_prompt(surowy_tekst)
+                    prompt = build_audio_notes_prompt(surowy_tekst, mode=notes_mode)
                     response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
                     notatki_ai = response['message']['content']
                 except Exception:
@@ -1762,17 +2157,17 @@ def transcribe():
                 preferred_provider = selected_transcription_model["provider"] if selected_transcription_model else None
                 notatki_ai, notes_model = generate_audio_notes(
                     surowy_tekst, processing_mode,
-                    preferred_provider=preferred_provider, model_used=None
+                    preferred_provider=preferred_provider, model_used=None, notes_mode=notes_mode
                 )
                 notes_model_used = describe_notes_model(notes_model, processing_mode)
             else:
                 try:
-                    prompt = build_audio_notes_prompt(surowy_tekst)
+                    prompt = build_audio_notes_prompt(surowy_tekst, mode=notes_mode)
                     response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
                     notatki_ai = response['message']['content']
                 except Exception:
                     notatki_ai = ""
-        elif not youtube_url or webpage_url or (file_path and file_path.endswith('.txt')):
+        elif webpage_url or (file_path and file_path.endswith('.txt')):
             if webpage_url:
                 surowy_tekst = _web_content
                 detected_lang = "Strona internetowa"
@@ -1784,7 +2179,7 @@ def transcribe():
                     surowy_tekst = f.read()
                     if os.path.exists(file_path):
                         os.remove(file_path)
-                        
+
                 detected_lang = "Plik tekstowy"
                 model_used_info = "Czysty tekst (Brak STT)"
                 notes_model_used = describe_notes_model(None, processing_mode)
@@ -1793,19 +2188,17 @@ def transcribe():
                 selected_transcription_model = get_selected_transcription_model(cloud_model_id)
                 preferred_provider = selected_transcription_model["provider"] if selected_transcription_model else None
                 notatki_ai, notes_model = generate_audio_notes(
-                    surowy_tekst,
-                    processing_mode,
-                    preferred_provider=preferred_provider,
-                    model_used=None
+                    surowy_tekst, processing_mode,
+                    preferred_provider=preferred_provider, model_used=None, notes_mode=notes_mode
                 )
                 notes_model_used = describe_notes_model(notes_model, processing_mode)
                 model_used_info = f"Strona internetowa + notatki: {describe_cloud_model(notes_model)}"
             else:
                 try:
-                    prompt = build_audio_notes_prompt(surowy_tekst)
+                    prompt = build_audio_notes_prompt(surowy_tekst, mode=notes_mode)
                     response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
                     notatki_ai = response['message']['content']
-                except:
+                except Exception:
                     notatki_ai = "Nie udało się wygenerować notatek AI lokalnie. Upewnij się, że Ollama działa w tle."
 
         else:
@@ -1816,7 +2209,8 @@ def transcribe():
                 model_name=model_name,
                 cloud_model_id=cloud_model_id,
                 language=language,
-                task=task
+                task=task,
+                notes_mode=notes_mode
             )
             surowy_tekst = transcription_result["text"]
             notatki_ai = transcription_result["notes"]
@@ -2120,6 +2514,16 @@ def api_webpage_read():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/new-chat', methods=['POST'])
+@limiter.limit("30 per hour")
+def new_chat():
+    user_email = session.get('user_email')
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    record_id = save_transcription_history(user_email, 'Nowy czat', '', '')
+    return jsonify({"record_id": record_id})
+
+
 @app.route('/ask-question', methods=['POST'])
 @limiter.limit("60 per hour; 10 per minute")
 def ask_question():
@@ -2316,17 +2720,20 @@ def get_history():
     history_list = []
     for r in rows:
         chat_messages = chat_by_record.get(r[0], [])
+        notes_usage = parse_openai_usage_history(r[5])
+        chat_usage_lists = [m.get("openai_usage_history", []) for m in chat_messages]
         history_list.append({
             "id": r[0],
             "filename": r[1],
             "raw_text": r[2],
             "ai_notes": r[3],
             "notes_model_used": r[4],
-            "openai_usage_history": parse_openai_usage_history(r[5]),
+            "openai_usage_history": notes_usage,
             "created_at": r[6],
             "chat_messages": chat_messages,
             "chat_count": len(chat_messages),
             "authenticity_score": extract_authenticity_score(r[3]),
+            "token_summary": compute_token_summary([notes_usage] + chat_usage_lists),
         })
     return jsonify({"items": history_list, "total": total, "offset": offset, "limit": HISTORY_PAGE_SIZE})
 
@@ -2335,10 +2742,49 @@ def delete_history(item_id):
     # print(f"[API /delete-history/{item_id}] Request received")
     if 'user_email' not in session:
         return jsonify({"error": "Brak autoryzacji"}), 401
-        
+
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM history WHERE id = ? AND user_email = ?", (item_id, session['user_email']))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
+
+
+@app.route('/delete-history/bulk', methods=['POST'])
+def delete_history_bulk():
+    if 'user_email' not in session:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids', [])
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "Brak listy ID"}), 400
+    ids = [int(i) for i in ids if str(i).isdigit()]
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.executemany(
+        "DELETE FROM history WHERE id = ? AND user_email = ?",
+        [(i, session['user_email']) for i in ids]
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "deleted": len(ids)})
+
+
+@app.route('/history/<int:item_id>/rename', methods=['PATCH'])
+def rename_history(item_id):
+    if 'user_email' not in session:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    data = request.get_json(silent=True) or {}
+    new_name = str(data.get('name') or '').strip()
+    if not new_name:
+        return jsonify({"error": "Pusty tytuł"}), 400
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE history SET filename = ? WHERE id = ? AND user_email = ?",
+        (new_name, item_id, session['user_email'])
+    )
     conn.commit()
     conn.close()
     return jsonify({"success": True})

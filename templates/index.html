@@ -15,893 +15,12 @@
         updateStylePreview();
         // window.addEventListener("resize", updateStylePreview);
     </script>
-    <style>
-        :root {
-            --bg-main: #0b0f19;
-            --bg-card: rgba(23, 28, 41, 0.6);
-            --bg-toolbar: rgba(30, 37, 56, 0.4);
-            --border-color: rgba(255, 255, 255, 0.08);
-            --text-main: #f1f5f9;
-            --text-muted: #94a3b8;
-            --accent-purple: #8b5cf6;
-            --accent-blue: #3b82f6;
-            --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%);
-            --danger: #ef4444;
-            --warning: #f59e0b;
-            --success: #10b981;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-main);
-            background-image: 
-                radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.15) 0px, transparent 50%),
-                radial-gradient(at 100% 100%, rgba(59, 130, 246, 0.15) 0px, transparent 50%);
-            color: var(--text-main);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            padding: 20px;
-            overflow: hidden;
-        }
-
-        .app-container {
-            background-color: var(--bg-card);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            width: 100%;
-            max-width: 1200px;
-            height: 92vh;
-            border-radius: 16px;
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            border: 1px solid var(--border-color);
-            position: relative;
-        }
-
-        /* Górny pasek użytkownika */
-        .user-bar {
-            background-color: rgba(11, 15, 25, 0.5);
-            padding: 12px 30px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 14px;
-            color: var(--text-muted);
-        }
-
-        .user-bar strong {
-            color: var(--text-main);
-        }
-
-        .user-bar-right {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-
-        .user-bar a {
-            color: var(--text-muted);
-            text-decoration: none;
-            transition: color 0.2s;
-        }
-
-        .user-bar a:hover {
-            color: var(--accent-blue);
-        }
-
-        .user-bar a.logout-link {
-            color: #f87171;
-            font-weight: 500;
-        }
-
-        .user-bar a.logout-link:hover {
-            color: var(--danger);
-        }
-
-        .history-trigger {
-            background: none;
-            border: none;
-            color: var(--warning);
-            font-size: 14px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-weight: 600;
-            transition: transform 0.2s, opacity 0.2s;
-        }
-
-        .history-trigger:hover {
-            opacity: 0.8;
-            transform: translateY(-1px);
-        }
-
-        /* Główny nagłówek panelu */
-        .header {
-            padding: 20px 30px 15px 30px;
-            background: transparent;
-        }
-
-        .header h1 {
-            font-size: 22px;
-            font-weight: 700;
-            background: var(--accent-gradient);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        /* Wnętrze aplikacji */
-        .main-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            padding: 0 30px 30px 30px;
-            gap: 15px;
-            overflow-y: auto;
-        }
-
-        /* Paski narzędzi (Toolbary) */
-        .toolbar {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
-            align-items: center;
-            background-color: var(--bg-toolbar);
-            padding: 12px 20px;
-            border-radius: 12px;
-            border: 1px solid var(--border-color);
-        }
-
-        .tool-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex: 0 0 auto;
-        }
-
-        .tool-group:last-of-type {
-            flex: 1 1 250px;
-        }
-
-        .tool-group-input {
-            width: 100%;
-            background-color: rgba(11, 15, 25, 0.6);
-            color: var(--text-main);
-            border: 1px solid var(--border-color);
-            padding: 8px 14px;
-            border-radius: 8px;
-            font-size: 14px;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        .tool-group-input:focus {
-            border-color: var(--accent-purple);
-        }
-
-        .toolbar .usage-summary-group {
-            flex: 0 1 auto;
-            min-width: 260px;
-            align-items: flex-start;
-            flex-direction: column;
-            gap: 3px;
-        }
-
-        .usage-summary-label {
-            color: var(--text-muted);
-            font-size: 11px;
-            font-weight: 600;
-            line-height: 1.2;
-            text-transform: uppercase;
-        }
-
-        .usage-summary {
-            color: var(--text-main);
-            font-size: 11px;
-            line-height: 1.35;
-            max-width: 620px;
-        }
-
-        .usage-summary.is-empty {
-            color: var(--text-muted);
-        }
-
-        label {
-            font-size: 13px;
-            color: var(--text-muted);
-            font-weight: 500;
-            white-space: nowrap;
-        }
-
-        select, input[type="file"] {
-            background-color: rgba(11, 15, 25, 0.6);
-            color: var(--text-main);
-            border: 1px solid var(--border-color);
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 13px;
-            outline: none;
-            cursor: pointer;
-            transition: border-color 0.2s;
-        }
-
-        select:focus {
-            border-color: var(--accent-blue);
-        }
-
-        /* Przyciski */
-        .btn {
-            padding: 9px 18px;
-            font-size: 13px;
-            font-weight: 600;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            white-space: nowrap;
-        }
-
-        .btn-primary {
-            background: var(--accent-gradient);
-            color: white;
-            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
-        }
-
-        .btn-primary:hover {
-            opacity: 0.9;
-            box-shadow: 0 6px 16px rgba(139, 92, 246, 0.4);
-        }
-
-        .btn-warning {
-            background-color: var(--warning);
-            color: #0b0f19;
-        }
-
-        .btn-warning:hover {
-            background-color: #d97706;
-        }
-
-        .btn-danger {
-            background-color: var(--danger);
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background-color: #dc2626;
-        }
-
-        .btn-secondary {
-            background-color: rgba(255, 255, 255, 0.08);
-            color: var(--text-main);
-            border: 1px solid var(--border-color);
-        }
-
-        .btn-secondary:hover {
-            background-color: rgba(255, 255, 255, 0.15);
-        }
-
-        .btn:disabled {
-            background-color: rgba(255, 255, 255, 0.03);
-            color: rgba(255, 255, 255, 0.2);
-            border-color: transparent;
-            box-shadow: none;
-            cursor: not-allowed;
-        }
-
-        /* Wizualizator Audio */
-        .visualizer-container {
-            height: 45px;
-            background-color: rgba(11, 15, 25, 0.4);
-            border-radius: 10px;
-            border: 1px solid var(--border-color);
-            overflow: hidden;
-        }
-
-        canvas {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-
-        /* Status i spinner */
-        .status-container {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 13px;
-            color: var(--text-muted);
-        }
-
-        .spinner {
-            display: none;
-            width: 16px;
-            height: 16px;
-            border: 2px solid rgba(255,255,255,0.1);
-            border-top: 2px solid var(--accent-blue);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Sekcja wyników (Teksty / Notatki) */
-        .results-wrapper {
-            flex: 1;
-            display: flex;
-            gap: 20px;
-            min-height: 400px;
-            flex-direction: column;
-        }
-
-        .result-box {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .result-box-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .result-box h3.toggle-header {
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .result-box h3.toggle-header::after {
-            content: "Pokaż";
-            display: inline-flex;
-            margin-left: 10px;
-            padding: 2px 8px;
-            border: 1px solid var(--border-color);
-            border-radius: 999px;
-            color: var(--text-main);
-            font-size: 10px;
-            font-weight: 600;
-            text-transform: none;
-            letter-spacing: 0;
-        }
-
-        .result-box.expanded h3.toggle-header::after {
-            content: "Ukryj";
-        }
-
-        #transcriptionBox {
-            flex: 0 0 auto;
-        }
-
-        #transcriptionBox.expanded {
-            flex: 1;
-        }
-
-        .result-box h3 {
-            font-size: 13px;
-            color: var(--text-muted);
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .notes-model-name {
-            color: var(--text-main);
-            text-transform: none;
-            letter-spacing: 0;
-        }
-
-        .usage-info {
-            display: none;
-            color: var(--text-muted);
-            font-size: 11px;
-            line-height: 1.35;
-            margin-top: -2px;
-        }
-
-        .usage-info.visible {
-            display: block;
-        }
-
-        .usage-info strong {
-            color: var(--text-main);
-            font-weight: 600;
-        }
-
-        .export-btn-group {
-            display: flex;
-            gap: 5px;
-        }
-
-        .btn-xs {
-            padding: 4px 10px;
-            font-size: 11px;
-            border-radius: 6px;
-        }
-
-        textarea {
-            flex: 1;
-            background-color: rgba(11, 15, 25, 0.6);
-            color: var(--text-main);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 16px;
-            font-size: 14px;
-            line-height: 1.6;
-            resize: none;
-            outline: none;
-            font-family: inherit;
-            transition: border-color 0.2s;
-        }
-
-        textarea:focus {
-            border-color: var(--accent-blue);
-        }
-
-        textarea.ai-notes-area {
-            border-color: rgba(139, 92, 246, 0.2);
-            background-color: rgba(139, 92, 246, 0.03);
-        }
-        textarea.ai-notes-area:focus {
-            border-color: var(--accent-purple);
-        }
-        .result-box textarea.is-collapsible {
-            display: none;
-        }
-
-        .result-box.expanded textarea.is-collapsible {
-            display: block;
-            min-height: 260px;
-        }
-        
-        /* Sekcja Czatu AI */
-        .chat-section {
-            background-color: var(--bg-toolbar);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 15px 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .chat-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .chat-header h4 {
-            font-size: 13px;
-            color: var(--warning);
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .chat-input-wrapper {
-            display: flex;
-            gap: 12px;
-            align-items: flex-start;
-        }
-
-        .chat-action-wrapper {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            min-width: 190px;
-        }
-
-        .chat-model-info {
-            color: var(--text-muted);
-            font-size: 11px;
-            line-height: 1.35;
-            max-width: 220px;
-        }
-
-        .chat-action-wrapper .usage-info {
-            max-width: 220px;
-        }
-
-        .chat-model-select-label {
-            color: var(--text-muted);
-            font-size: 11px;
-            line-height: 1.2;
-        }
-
-        .chat-model-select {
-            width: 100%;
-            min-height: 34px;
-            background-color: rgba(11, 15, 25, 0.6);
-            color: var(--text-main);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 6px 8px;
-            font-size: 12px;
-            outline: none;
-        }
-
-        .chat-model-select:focus {
-            border-color: var(--warning);
-        }
-
-        .chat-input {
-            flex: 1;
-            background-color: rgba(11, 15, 25, 0.6);
-            color: var(--text-main);
-            border: 1px solid var(--border-color);
-            padding: 10px 16px;
-            border-radius: 8px;
-            font-size: 14px;
-            line-height: 1.5;
-            outline: none;
-            resize: vertical;
-            min-height: 210px;
-            transition: border-color 0.2s;
-        }
-
-        .chat-input:focus {
-            border-color: var(--warning);
-        }
-
-        .chat-response-box {
-            display: none;
-            background-color: rgba(11, 15, 25, 0.4);
-            border-left: 3px solid var(--warning);
-            border-radius: 6px;
-            padding: 14px 18px;
-            font-size: 14px;
-            line-height: 1.6;
-            color: var(--text-main);
-            min-height: 140px;
-            overflow-y: auto;
-        }
-
-        .markdown-body {
-            color: var(--text-main);
-        }
-
-        .markdown-body h1,
-        .markdown-body h2,
-        .markdown-body h3,
-        .markdown-body h4 {
-            margin: 14px 0 8px;
-            color: #fff;
-            font-weight: 700;
-            line-height: 1.3;
-            text-transform: none;
-            letter-spacing: 0;
-        }
-
-        .markdown-body h1 { font-size: 20px; }
-        .markdown-body h2 { font-size: 18px; }
-        .markdown-body h3 { font-size: 16px; }
-        .markdown-body h4 { font-size: 14px; }
-
-        .markdown-body p {
-            margin: 8px 0;
-        }
-
-        .markdown-body ul,
-        .markdown-body ol {
-            margin: 8px 0 8px 22px;
-            padding: 0;
-        }
-
-        .markdown-body li {
-            margin: 4px 0;
-        }
-
-        .markdown-body table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 12px 0;
-            font-size: 13px;
-        }
-
-        .markdown-body th,
-        .markdown-body td {
-            border: 1px solid var(--border-color);
-            padding: 8px 10px;
-            text-align: left;
-            vertical-align: top;
-        }
-
-        .markdown-body th {
-            background-color: rgba(255, 255, 255, 0.06);
-            color: #fff;
-        }
-
-        .markdown-body code {
-            background-color: rgba(255, 255, 255, 0.08);
-            border-radius: 4px;
-            padding: 1px 5px;
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            font-size: 12px;
-        }
-
-        .markdown-body pre {
-            overflow-x: auto;
-            background-color: rgba(0, 0, 0, 0.25);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            padding: 10px;
-            margin: 10px 0;
-        }
-
-        .markdown-body blockquote {
-            border-left: 3px solid var(--accent-blue);
-            margin: 10px 0;
-            padding: 6px 12px;
-            color: var(--text-muted);
-            background-color: rgba(59, 130, 246, 0.08);
-        }
-
-        .markdown-body a {
-            color: #93c5fd;
-            text-decoration: underline;
-        }
-
-        .chat-history-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .chat-message {
-            border-left: 3px solid var(--border-color);
-            padding: 8px 10px;
-            background-color: rgba(15, 23, 42, 0.45);
-            border-radius: 6px;
-        }
-
-        .chat-message.user {
-            border-left-color: var(--warning);
-        }
-
-        .chat-message.assistant {
-            border-left-color: var(--accent-blue);
-        }
-
-        .chat-message-meta {
-            display: flex;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 12px;
-            margin-bottom: 5px;
-            color: var(--text-muted);
-            font-size: 12px;
-        }
-
-        .divider {
-            border-left: 1px solid var(--border-color);
-            height: 25px;
-            margin: 0 5px;
-        }
-
-        /* Panel historii (Sidebar) */
-        .history-sidebar {
-            position: absolute;
-            top: 0;
-            right: -380px;
-            width: 380px;
-            height: 100%;
-            background-color: #0e131f;
-            border-left: 1px solid var(--border-color);
-            box-shadow: -10px 0 30px rgba(0,0,0,0.5);
-            transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            z-index: 999;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .history-sidebar.open {
-            right: 0;
-        }
-
-        .history-header {
-            padding: 20px 25px;
-            background-color: rgba(23, 28, 41, 0.4);
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .history-header h2 {
-            font-size: 16px;
-            font-weight: 600;
-            color: #fff;
-        }
-
-        .close-history-btn {
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            font-size: 24px;
-            cursor: pointer;
-            transition: color 0.2s;
-        }
-
-        .close-history-btn:hover {
-            color: #fff;
-        }
-
-        .history-list-container {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .history-item {
-            background-color: rgba(255, 255, 255, 0.02);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 14px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.2s ease;
-        }
-
-        .history-item:hover {
-            background-color: rgba(255, 255, 255, 0.05);
-            border-color: rgba(255, 255, 255, 0.15);
-        }
-
-        .history-item-info {
-            flex: 1;
-            cursor: pointer;
-            overflow: hidden;
-            margin-right: 10px;
-        }
-
-        .history-item-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #fff;
-            margin-bottom: 4px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .history-item-date {
-            font-size: 11px;
-            color: var(--text-muted);
-        }
-
-        .history-item-chat-count {
-            font-size: 11px;
-            color: var(--warning);
-            margin-top: 4px;
-        }
-
-        .delete-item-btn {
-            background: none;
-            border: none;
-            color: #f87171;
-            cursor: pointer;
-            font-size: 14px;
-            padding: 6px;
-            border-radius: 6px;
-            transition: background-color 0.2s;
-        }
-
-        .delete-item-btn:hover {
-            background-color: rgba(239, 68, 68, 0.15);
-        }
-
-        /* Przełącznik trybu (Lokalnie / Chmura) */
-        .switch-container {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .switch-input {
-            display: none;
-        }
-
-        .switch-slider {
-            width: 44px;
-            height: 22px;
-            background-color: rgba(255,255,255,0.1);
-            border-radius: 22px;
-            position: relative;
-            transition: background-color 0.2s;
-            border: 1px solid var(--border-color);
-        }
-
-        .switch-slider::before {
-            content: "";
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            background-color: #fff;
-            top: 2px;
-            left: 2px;
-            transition: transform 0.2s;
-        }
-
-        .switch-input:checked + .switch-slider {
-            background: var(--accent-gradient);
-            border-color: transparent;
-        }
-
-        .switch-input:checked + .switch-slider::before {
-            transform: translateX(22px);
-        }
-
-        .online-label {
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--text-muted);
-            transition: color 0.2s;
-        }
-
-        .switch-input:checked ~ .online-label {
-            color: var(--accent-blue);
-        }
-
-        .badge-cloud {
-            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
-            color: var(--success);
-            padding: 6px 14px;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 600;
-            border: 1px solid rgba(16, 185, 129, 0.2);
-        }
-    </style>
+    
     <script nonce="{{ csp_nonce() }}" src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 
 </head>
 <body>
-    <!-- <h1>Info: <span id="screenLabel" class="hint"></span> | <span id="pageLabel" class="hint"></span></h1> -->
-    <!-- <script nonce="{{ csp_nonce() }}">
-        const updateStylePreview = () => {
-            const screenLabel = document.getElementById("screenLabel");
-            const pageLabel = document.getElementById("pageLabel");
-            const screenWidth = window.screen?.width;
-            const browserWidth = document.documentElement?.clientWidth;
-            console.log(screenWidth);
-            if (screenLabel) screenLabel.textContent = `ekran: ${screenWidth || 0}px`;
-            if (pageLabel) {
-                pageLabel.textContent = `pageLabel strona: ${browserWidth || 0}px`;
-                console.log(`browserWidth=${browserWidth}`);
-            }
-            if (browserWidth < 768) { 
-                console.log(browserWidth);
-                window.location.replace('{{ url_for("mobile_page") }}'); 
-            }
-        }
-        updateStylePreview();
-        window.addEventListener("resize", updateStylePreview);
-    </script> -->
     <div class="app-container">
         <div class="user-bar">
             <div>Zalogowany jako: <strong>{{ user.first_name }} {{ user.last_name }}</strong> ({{ user.email }})</div>
@@ -909,7 +28,7 @@
                 <button id="openHistoryBtn" class="history-trigger">🕒 Historia</button>
                 <div class="divider" style="height: 15px;"></div>
                 <a href="{{ url_for('settings') }}">Ustawienia</a>
-                <a href="{{ url_for('change_password') }}">Zmiana hasła</a>
+                
                 <a href="{{ url_for('logout') }}" class="logout-link">Wyloguj się</a>
             </div>
         </div>
@@ -1003,7 +122,9 @@
                     <button id="uploadBtn" class="btn btn-secondary">Prześlij plik</button>
                 </div>
 
-                <div class="divider"></div>
+            </div>
+
+            <div class="toolbar">
 
                 <div class="tool-group">
                     <label for="urlInput" id="urlLabel">URL:</label>
@@ -1013,15 +134,29 @@
 
                 <div class="divider"></div>
 
-                <div class="tool-group" style="align-items:flex-start; flex-direction:column; gap:6px;">
-                    <label for="directTextInput" style="font-size:12px; color:var(--text-muted);">Tekst:</label>
+                <div class="tool-group" style="flex-basis:100%; align-items:flex-start; flex-direction:column; gap:6px;">
+                    <label for="directTextInput" style="font-size:12px; color:var(--text-muted);">⌨️ Tekst (wklej lub wpisz):</label>
                     <textarea id="directTextInput"
-                              style="width:100%; min-height:72px; resize:vertical; background:var(--input-bg,rgba(255,255,255,0.05)); color:var(--text-main,#f1f5f9); border:1px solid var(--border-color,rgba(255,255,255,0.1)); border-radius:6px; padding:8px 10px; font-size:13px; font-family:inherit; outline:none;"
+                              style="width:100%; min-height:80px; resize:vertical; background:var(--input-bg,rgba(255,255,255,0.05)); color:var(--text-main,#f1f5f9); border:1px solid var(--border-color,rgba(255,255,255,0.1)); border-radius:6px; padding:8px 10px; font-size:13px; font-family:inherit; outline:none; box-sizing:border-box;"
                               placeholder="Wklej lub wpisz tekst do przetworzenia przez AI…"></textarea>
                     <button id="directTextBtn" class="btn btn-secondary">⌨️ Prześlij treść</button>
                 </div>
 
-                <div class="divider"></div>
+                <div class="notes-mode-row">
+                    <span class="notes-mode-lbl">Typ notatki AI</span>
+                    <div class="notes-mode-pills">
+                        <button class="mode-pill selected" data-mode="full">Pełne notatki</button>
+                        <button class="mode-pill" data-mode="summary">Streszczenie</button>
+                        <button class="mode-pill" data-mode="overview">Omówienie</button>
+                        <button class="mode-pill" data-mode="bullets">Lista punktów</button>
+                        <button class="mode-pill" data-mode="prompt">Prompt AI</button>
+                        <button class="mode-pill" data-mode="reel-prepare">Przygotuj rolkę</button>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="toolbar">
 
                 <div class="tool-group usage-summary-group">
                     <span class="usage-summary-label">Zużycie OpenAI</span>
@@ -1063,6 +198,13 @@
                     </div>
                     <div id="notesUsageInfo" class="usage-info"></div>
                     <textarea id="aiNotes" class="ai-notes-area" readonly placeholder="Tutaj pojawi się ustrukturyzowana notatka z nagrania stworzona przez AI..."></textarea>
+                    <div id="reel-bar" style="display:none; margin-top:10px;">
+                        <button id="reel-send-btn" onclick="sendReelPayload()"
+                                style="width:100%; padding:11px; border:none; border-radius:8px; background:#f59e0b; color:#fff; font-size:13px; font-weight:600; cursor:pointer;">
+                            🎬 Zleć generowanie video
+                        </button>
+                        <div id="reel-status" style="margin-top:6px; font-size:12px; color:var(--text-muted); display:none;"></div>
+                    </div>
                 </div>
                 
             </div>
@@ -1121,6 +263,7 @@
         function getCsrfToken() {
             return document.querySelector('meta[name="csrf-token"]').content;
         }
+        let selectedNotesMode = 'full';
         let mediaRecorder;
         let audioChunks = [];
         let audioCtx;
@@ -1270,6 +413,21 @@
         function setStatus(text, isLoading = false) {
             status.textContent = text;
             spinner.style.display = isLoading ? 'block' : 'none';
+        }
+
+        function micErrMsg(err) {
+            const n = err && err.name;
+            if (n === 'NotAllowedError' || n === 'PermissionDeniedError')
+                return '🔒 Dostęp do mikrofonu zablokowany — zezwól w ustawieniach przeglądarki (ikona kłódki w pasku adresu) i odśwież stronę.';
+            if (n === 'NotFoundError' || n === 'DevicesNotFoundError')
+                return '🎤 Nie wykryto mikrofonu — podłącz urządzenie audio i spróbuj ponownie.';
+            if (n === 'NotReadableError' || n === 'TrackStartError')
+                return '⚠️ Mikrofon zajęty przez inną aplikację — zamknij inne programy używające mikrofonu.';
+            if (n === 'SecurityError')
+                return '🔐 Nagrywanie wymaga HTTPS — skontaktuj się z administratorem serwera.';
+            if (n === 'AbortError')
+                return '⏹ Nagrywanie przerwane przez przeglądarkę — spróbuj ponownie.';
+            return `Błąd mikrofonu (${n || 'nieznany'}): ${err && err.message || 'brak szczegółów'}`;
         }
 
         function escapeHtml(value) {
@@ -2277,7 +1435,7 @@
                 stopBtn.disabled = false;
                 setStatus("Nagrywanie dźwięku...", false);
             } catch (err) {
-                alert("Brak dostępu do mikrofonu lub błąd urządzenia.");
+                setStatus(micErrMsg(err), false);
             }
         });
 
@@ -2315,6 +1473,14 @@
             stopBtn.disabled = true;
             
             startSmartCountdown(totalRecordingTime);
+        });
+
+        document.querySelectorAll('.mode-pill').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.mode-pill').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedNotesMode = btn.dataset.mode;
+            });
         });
 
         uploadBtn.addEventListener('click', async () => {
@@ -2502,9 +1668,13 @@
             formData.append('webpage_url', webpageUrl);
             formData.append('direct_text', directText);
             formData.append('processing_mode', modeSwitch.checked ? 'online' : 'offline');
+            formData.append('notes_mode', selectedNotesMode);
 
+            activeRecordId = null;
+            currentDocumentName = "Transkrypcja";
             resultTextarea.value = "";
             aiNotesTextarea.value = "";
+            toggleChatAccess(false);
             updateNotesModelLabel();
             clearAllUsageInfo();
             
@@ -2524,6 +1694,11 @@
                     resultTextarea.value = data.text.trim();
                     aiNotesTextarea.value = data.notes ? data.notes.trim() : "Model AI nie zwrócił analizy.";
                     updateNotesModelLabel(data.notes_model_used);
+                    const reelBar = document.getElementById('reel-bar');
+                    if (reelBar) {
+                        reelBar.style.display = selectedNotesMode === 'reel-prepare' && data.notes ? 'block' : 'none';
+                        document.getElementById('reel-status').style.display = 'none';
+                    }
                     setActiveOpenAiUsageHistory(data.openai_usage_history);
                     if (data.saved_name) {
                         currentDocumentName = data.saved_name;
@@ -2560,6 +1735,42 @@
                 alert("Błąd podczas wysyłania zapytania na serwer.");
             } finally {
                 stopCountdown();
+            }
+        }
+
+        async function sendReelPayload() {
+            const raw = document.getElementById('aiNotes').value.trim();
+            let payload;
+            try {
+                const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                payload = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
+            } catch {
+                const status = document.getElementById('reel-status');
+                status.style.display = 'block';
+                status.style.color = 'var(--danger, #ef4444)';
+                status.textContent = 'Błąd: notatki nie zawierają poprawnego JSON.';
+                return;
+            }
+            const btn = document.getElementById('reel-send-btn');
+            const status = document.getElementById('reel-status');
+            btn.disabled = true;
+            status.style.display = 'block';
+            status.style.color = 'var(--text-muted)';
+            status.textContent = 'Wysyłanie…';
+            try {
+                const res = await fetch('https://ops02.jdblayer.com/api/news-to-video/auto-generator', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const text = await res.text();
+                status.style.color = res.ok ? '#22c55e' : 'var(--danger, #ef4444)';
+                status.textContent = res.ok ? `✓ Zlecono (${res.status})` : `Błąd ${res.status}: ${text.slice(0, 120)}`;
+            } catch (err) {
+                status.style.color = 'var(--danger, #ef4444)';
+                status.textContent = 'Błąd połączenia: ' + err.message;
+            } finally {
+                btn.disabled = false;
             }
         }
     </script>

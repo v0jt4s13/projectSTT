@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Historia zużycia tokenów</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style-usage-history.css') }}">
+</head>
+<body>
+<div class="page">
+
+    <div class="topbar">
+        <div>
+            <h1>Historia zużycia tokenów</h1>
+            <div class="view-label">{{ view_label }}</div>
+        </div>
+        <div class="topbar-right">
+            <button class="icon-btn" onclick="openSidebar()" title="Menu">☰</button>
+        </div>
+    </div>
+
+    {% if is_admin %}
+    <!-- ── admin: user switcher ── -->
+    <div class="user-switcher">
+        <div class="user-switcher-title">Widok administratora</div>
+        <div class="user-pills">
+            <a href="?view=__all__" class="user-pill user-pill--all {% if view_email == '__all__' %}active{% endif %}">
+                Wszyscy użytkownicy
+            </a>
+            {% for u in all_users %}
+            <a href="?view={{ u.email }}" class="user-pill {% if view_email == u.email %}active{% endif %}" title="{{ u.email }}">
+                {{ u.name or u.email }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ── summary cards ── -->
+    <div class="cards">
+        <div class="card">
+            <div class="card-label">Łącznie</div>
+            <div class="card-tokens">{{ "{:,}".format(totals.input + totals.output) }}</div>
+            <div class="card-detail">↑{{ "{:,}".format(totals.input) }} &nbsp;↓{{ "{:,}".format(totals.output) }}</div>
+            <div class="card-cost">${{ "%.4f"|format(totals.cost) }}</div>
+        </div>
+        <div class="card card--today">
+            <div class="card-label">Dziś</div>
+            <div class="card-tokens">{{ "{:,}".format(today.input + today.output) }}</div>
+            <div class="card-detail">↑{{ "{:,}".format(today.input) }} &nbsp;↓{{ "{:,}".format(today.output) }}</div>
+            <div class="card-cost">${{ "%.4f"|format(today.cost) }}</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Średnio / dzień</div>
+            <div class="card-tokens">{{ "{:,.0f}".format(daily_avg.input + daily_avg.output) }}</div>
+            <div class="card-detail">↑{{ "{:,.0f}".format(daily_avg.input) }} &nbsp;↓{{ "{:,.0f}".format(daily_avg.output) }}</div>
+            <div class="card-cost">${{ "%.4f"|format(daily_avg.cost) }}</div>
+        </div>
+        <div class="card card--last7">
+            <div class="card-label">Ostatnie 7 dni</div>
+            <div class="card-tokens">{{ "{:,}".format(last7.input + last7.output) }}</div>
+            <div class="card-detail">↑{{ "{:,}".format(last7.input) }} &nbsp;↓{{ "{:,}".format(last7.output) }}</div>
+            <div class="card-cost">${{ "%.4f"|format(last7.cost) }}</div>
+        </div>
+        <div class="card card--last30">
+            <div class="card-label">Ostatnie 30 dni</div>
+            <div class="card-tokens">{{ "{:,}".format(last30.input + last30.output) }}</div>
+            <div class="card-detail">↑{{ "{:,}".format(last30.input) }} &nbsp;↓{{ "{:,}".format(last30.output) }}</div>
+            <div class="card-cost">${{ "%.4f"|format(last30.cost) }}</div>
+        </div>
+    </div>
+
+    {% if is_admin and user_leaderboard %}
+    <!-- ── admin: leaderboard ── -->
+    <div class="section">
+        <div class="section-title">Ranking użytkowników wg kosztu</div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:32px;">#</th>
+                    <th>Użytkownik</th>
+                    <th>Wejście</th>
+                    <th>Wyjście</th>
+                    <th>Razem</th>
+                    <th>Koszt (USD)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in user_leaderboard %}
+                <tr {% if u.email == view_email %}style="background:rgba(139,92,246,.08);"{% endif %}>
+                    <td class="rank-cell">{{ loop.index }}</td>
+                    <td>
+                        <a href="?view={{ u.email }}" style="color:var(--text-main);text-decoration:none;">
+                            {{ u.name or u.email }}
+                            <span class="user-email">{{ u.email }}</span>
+                        </a>
+                    </td>
+                    <td>{{ "{:,}".format(u.input) }}</td>
+                    <td>{{ "{:,}".format(u.output) }}</td>
+                    <td>{{ "{:,}".format(u.input + u.output) }}</td>
+                    <td class="cost-cell">${{ "%.4f"|format(u.cost) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- ── daily bar chart ── -->
+    <div class="section">
+        <div class="section-title">Zużycie dzienne</div>
+        {% if by_day %}
+        <div class="chart-legend">
+            <span style="display:flex;align-items:center;gap:5px;"><span class="legend-dot" style="background:var(--blue)"></span>Wejście</span>
+            <span style="display:flex;align-items:center;gap:5px;"><span class="legend-dot" style="background:var(--purple)"></span>Wyjście</span>
+        </div>
+        <div class="chart-wrap">
+            <div class="bar-chart" id="bar-chart">
+                {% set max_total = namespace(v=1) %}
+                {% for day, d in by_day.items() %}
+                    {% if (d.input + d.output) > max_total.v %}{% set max_total.v = d.input + d.output %}{% endif %}
+                {% endfor %}
+                {% for day, d in by_day.items() %}
+                {% set total_tok = d.input + d.output %}
+                {% set in_h  = [(d.input  / max_total.v * 110)|int, 2]|max %}
+                {% set out_h = [(d.output / max_total.v * 110)|int, 2]|max %}
+                <div class="bar-col" title="{{ day }}: ↑{{ d.input }} ↓{{ d.output }} · ${{ '%.4f'|format(d.cost) }}">
+                    <div class="bar-stack" style="height:110px;">
+                        <div class="bar-seg bar-seg--in"  style="height:{{ in_h }}px;"></div>
+                        <div class="bar-seg bar-seg--out" style="height:{{ out_h }}px;"></div>
+                    </div>
+                    <div class="bar-label">{{ day[5:] }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <p class="no-data">Brak danych</p>
+        {% endif %}
+    </div>
+
+    <!-- ── by model ── -->
+    <div class="section">
+        <div class="section-title">Zużycie wg modelu</div>
+        {% if by_model %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Model</th>
+                    <th>Wejście</th>
+                    <th>Wyjście</th>
+                    <th>Razem</th>
+                    <th>Koszt (USD)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for model, d in by_model.items() %}
+                <tr>
+                    <td class="mono">{{ model }}</td>
+                    <td>{{ "{:,}".format(d.input) }}</td>
+                    <td>{{ "{:,}".format(d.output) }}</td>
+                    <td>{{ "{:,}".format(d.input + d.output) }}</td>
+                    <td class="cost-cell">${{ "%.5f"|format(d.cost) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="no-data">Brak danych</p>
+        {% endif %}
+    </div>
+
+    <!-- ── by operation ── -->
+    <div class="section">
+        <div class="section-title">Zużycie wg operacji</div>
+        {% if by_op %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Operacja</th>
+                    <th>Wejście</th>
+                    <th>Wyjście</th>
+                    <th>Razem</th>
+                    <th>Koszt (USD)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for op, d in by_op.items() %}
+                <tr>
+                    <td class="mono">{{ op }}</td>
+                    <td>{{ "{:,}".format(d.input) }}</td>
+                    <td>{{ "{:,}".format(d.output) }}</td>
+                    <td>{{ "{:,}".format(d.input + d.output) }}</td>
+                    <td class="cost-cell">${{ "%.5f"|format(d.cost) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="no-data">Brak danych</p>
+        {% endif %}
+    </div>
+
+    <!-- ── daily breakdown table ── -->
+    <div class="section">
+        <div class="section-title">Dzienne zestawienie</div>
+        {% if by_day %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Wejście</th>
+                    <th>Wyjście</th>
+                    <th>Razem</th>
+                    <th>Koszt (USD)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for day, d in by_day.items()|reverse %}
+                <tr>
+                    <td class="mono">{{ day }}</td>
+                    <td>{{ "{:,}".format(d.input) }}</td>
+                    <td>{{ "{:,}".format(d.output) }}</td>
+                    <td>{{ "{:,}".format(d.input + d.output) }}</td>
+                    <td class="cost-cell">${{ "%.5f"|format(d.cost) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="no-data">Brak danych o zużyciu w historii.</p>
+        {% endif %}
+    </div>
+
+</div>
+
+<div id="ov-sidebar" class="overlay overlay--right">
+    <div class="backdrop" onclick="closeOverlay('ov-sidebar')"></div>
+    <div class="sidebar">
+        <div class="sidebar-profile">
+            <div class="sidebar-avatar">👤</div>
+            <div>
+                <div class="sidebar-name">{{ user.first_name }} {{ user.last_name }}</div>
+                <div class="sidebar-email">{{ user.email }}</div>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="{{ url_for('index_page') }}" class="nav-item">
+                <span class="nav-icon">🏠</span>Panel
+            </a>
+            <!-- <a class="nav-item" onclick="openHistory(); closeOverlay('ov-sidebar');">
+                <span class="nav-icon">🕒</span>Historia transkrypcji
+            </a> -->
+            <a href="{{ url_for('settings') }}" class="nav-item">
+                <span class="nav-icon">⚙️</span>Ustawienia systemowe
+            </a>
+            <a href="{{ url_for('usage_history') }}" class="nav-item active">
+                <span class="nav-icon">📊</span>Zużycie tokenów
+            </a>
+            <a href="{{ url_for('change_password') }}" class="nav-item">
+                <span class="nav-icon">🔑</span>Zmiana hasła
+            </a>
+            <!-- <a class="nav-item" onclick="nav('chat'); closeOverlay('ov-sidebar');">
+                <span class="nav-icon">🤖</span>Czat z AI
+            </a> -->
+        </nav>
+        <div class="sidebar-footer">
+            <a href="{{ url_for('logout') }}" class="logout-btn">
+                <span>↩</span> Wyloguj się
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+function openOverlay(id)  { document.getElementById(id).classList.add('open'); }
+function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+function openSidebar()    { openOverlay('ov-sidebar'); }
+</script>
+</body>
+</html>

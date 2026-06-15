@@ -1,5 +1,88 @@
 # Changelog
 
+## 2026-06-15 — Statystyki użycia, cennik modeli, refaktor CSS, nawigacja sidebar
+
+### models_config.py (nowe funkcje)
+
+- Dodano `MODEL_PRICING` — słownik cen tokenów (USD/1M) dla wszystkich modeli OpenAI i Groq, w tym `gpt-4o-transcribe` i `gpt-4o-mini-transcribe`
+- Dodano `AUDIO_PRICING` — słownik cen modeli audio (USD/minutę): `whisper-1`, `whisper-large-v3`, `distil-whisper-large-v3-en`, `whisper-large-v3-turbo`
+- `resolve_pricing_key(model_name)` — dopasowanie prefiksowe nazwy modelu do klucza cennika (obsługa wersjonowanych nazw jak `gpt-4o-mini-2024-07-18`)
+- `get_audio_duration_seconds(file_path)` — czas trwania audio przez `ffprobe`
+- `get_audio_cost(model_name, seconds)` — koszt USD na podstawie czasu i cennika
+- `PRICING_DATA_FILE`, `load_pricing_data()`, `save_pricing_data()` — zapis/odczyt nadpisań cennika do pliku `pricing_data.json` z timestampem ostatniej aktualizacji
+- `get_effective_model_pricing()` — scala `MODEL_PRICING` z nadpisaniami z pliku; używane w runtime bez restartu
+
+### app.py
+
+**Śledzenie kosztów modeli audio**
+- `extract_openai_usage()` obsługuje teraz pole `duration` (sekundy) z odpowiedzi `verbose_json` (`whisper-1`)
+- `transcribe_with_cloud()` — Groq: po transkrypcji mierzy czas pliku przez `ffprobe` i zapisuje rekord użycia z polem `seconds`; OpenAI `whisper-1`: wymuszony format `verbose_json` dla uchwycenia czasu trwania
+- `compute_token_summary()` i `_aggregate()` w `usage_history`: gdy rekord ma `seconds` zamiast tokenów — koszt obliczany przez `get_audio_cost()`
+
+**Nowe trasy**
+- `GET /usage-history` — widok historii zużycia tokenów i kosztów; admin może przeglądać dowolnego użytkownika (`?view=email`) lub wszystkich (`?view=__all__`)
+- `POST /settings/update-pricing` — pobiera aktualny cennik z LiteLLM (`model_prices_and_context_window.json`), zapisuje zmiany do `pricing_data.json`, zwraca liczbę zaktualizowanych modeli
+- `POST /admin/restart` — restart procesu serwera (tylko admin)
+- `POST /new-chat` — zeruje historię czatu dla danego rekordu
+- `POST /delete-history/bulk` — masowe usuwanie elementów historii
+- `PATCH /history/<id>/rename` — zmiana tytułu rekordu historii
+
+**Trasa `/settings`**
+- Przekazuje do szablonu: `model_pricing`, `audio_pricing`, `pricing_last_updated`, `user` (dane zalogowanego użytkownika)
+
+**Trasa `/usage-history`**
+- Przekazuje do szablonu: `user`, `model_pricing`, dane agregatów (tokeny, koszty, wykresy dzienne, zestawienie per model/operacja)
+- Admin: `user_leaderboard` — ranking użytkowników według kosztu
+
+### templates/usage-history-page.html (nowy plik)
+
+- Karty podsumowania (tokeny wejściowe/wyjściowe, koszt całkowity, koszt ostatnich 30 dni)
+- Wykres słupkowy aktywności dziennej (ostatnie 30 dni)
+- Tabela kosztów per model i per operacja
+- Admin: przełącznik widoku użytkowników (pill-linki), tabela rankingowa
+- Nawigacja: sidebar overlay (przycisk ☰ + panel z prawej) identyczny jak w `mobile-page.html`
+
+### templates/settings.html
+
+- Sekcja cennika tokenów (tabela `MODEL_PRICING` per model)
+- Sekcja cennika audio (tabela `AUDIO_PRICING` per model)
+- Przycisk „Aktualizuj cenniki" (tylko admin) + etykieta „zaktualizowano N dni temu"
+- Nawigacja: zastąpiono stary dropdown hamburger sidebar overlay (przycisk ☰ + panel z prawej)
+- Szablon otrzymuje zmienną `user` (dane zalogowanego użytkownika do wyświetlenia w profilu sidebara)
+
+### Refaktor CSS — ekstrakcja styli inline do plików zewnętrznych
+
+Wszystkie bloki `<style>` usunięte z szablonów HTML i zastąpione linkami do plików CSS:
+
+| Szablon | Pliki CSS |
+|---|---|
+| `index.html` | `style.css` |
+| `mobile-page.html` | `style.css` + `style-mobile.css` |
+| `settings.html` | `style.css` + `style-settings.css` |
+| `login-page.html` | `style.css` + `style-login.css` |
+| `rejestracja.html` | `style.css` + `style-rejestracja.css` |
+| `zmiana-hasla.html` | `style.css` + `style-zmiana-hasla.css` |
+| `usage-history-page.html` | `style.css` + `style-usage-history.css` |
+
+**Nowe pliki CSS (`static/`)**
+- `style-mobile.css` — kompletny design system mobile (tokeny, ekrany, karty, overlaye, bottom sheets, czat, historia, toast)
+- `style-settings.css` — nadpisania specyficzne dla strony ustawień (body, label, input, .btn)
+- `style-usage-history.css` — nadpisania body + pełny CSS sidebar overlay dla tej strony
+- `style-login.css` — jasny motyw dla strony logowania (Bootstrap override)
+- `style-rejestracja.css` — jasny motyw dla strony rejestracji
+- `style-zmiana-hasla.css` — ciemny glassmorphism override dla strony zmiany hasła
+
+**`style.css` — rozszerzenia**
+- Nowe tokeny CSS w `:root`: `--bg-panel`, `--bg-control`, `--purple`, `--blue`, `--green`, `--amber`, `--red`, `--border`, `--gradient`, `--r-card`, `--r-panel`, `--touch`
+- Nowe klasy wspólne: `.page`, `.topbar`, `.section`, `.section-header`, `.nav-link`, `.view-label`, `.user-switcher`, `.user-pill`, karty statystyk, wykresy słupkowe, tabele
+- Sidebar overlay: `.overlay`, `.overlay--right`, `.backdrop`, `.sidebar`, `.sidebar-profile`, `.sidebar-avatar`, `.sidebar-nav`, `.nav-item`, `.nav-icon`, `.sidebar-footer`, `.logout-btn`, `.icon-btn`
+
+### pricing_data.json (nowy plik)
+
+Plik nadpisań cennika — tworzony automatycznie przy pierwszej aktualizacji przez `/settings/update-pricing`. Zawiera ceny per model i timestamp ostatniej aktualizacji.
+
+---
+
 ## 2026-06-13 — Hardening bezpieczeństwa
 
 ### app.py

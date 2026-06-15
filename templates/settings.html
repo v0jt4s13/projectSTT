@@ -3,519 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Ustawienia modeli AI</title>
-    <style>
-        :root {
-            --bg-main: #0b0f19;
-            --bg-panel: rgba(23, 28, 41, 0.72);
-            --bg-control: rgba(11, 15, 25, 0.65);
-            --border-color: rgba(255, 255, 255, 0.08);
-            --text-main: #f1f5f9;
-            --text-muted: #94a3b8;
-            --accent-purple: #8b5cf6;
-            --accent-blue: #3b82f6;
-            --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%);
-            --danger: #ef4444;
-            --success: #10b981;
-            --warning: #f59e0b;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-main);
-            color: var(--text-main);
-            min-height: 100vh;
-            padding: 24px;
-        }
-
-        .page {
-            width: min(1180px, 100%);
-            margin: 0 auto;
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
-        }
-
-        .topbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-            padding: 18px 22px;
-            background-color: var(--bg-panel);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-        }
-
-        h1 {
-            font-size: 22px;
-            background: var(--accent-gradient);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .nav-link {
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 600;
-        }
-
-        .nav-link:hover {
-            color: var(--accent-blue);
-        }
-
-        .section {
-            background-color: var(--bg-panel);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 20px 22px;
-        }
-
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 16px;
-            margin-bottom: 16px;
-        }
-
-        .section h2 {
-            font-size: 15px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .section-toggle {
-            background: none;
-            border: 1px solid var(--border-color);
-            color: var(--text-muted);
-            border-radius: 6px;
-            padding: 4px 10px;
-            cursor: pointer;
-            font-size: 12px;
-            flex-shrink: 0;
-            transition: color 0.15s, border-color 0.15s;
-        }
-        .section-toggle:hover { color: var(--text-primary); border-color: var(--text-muted); }
-
-        .section.collapsed .section-body { display: none; }
-        .section.collapsed .section-header { margin-bottom: 0; }
-
-        .muted {
-            color: var(--text-muted);
-            font-size: 13px;
-            line-height: 1.5;
-        }
-
-        .key-status {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
-        .key-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 7px 10px;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            color: var(--text-muted);
-            background-color: var(--bg-control);
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .key-pill.ok {
-            color: var(--success);
-            border-color: rgba(16, 185, 129, 0.25);
-        }
-
-        .key-pill.missing {
-            color: var(--warning);
-            border-color: rgba(245, 158, 11, 0.25);
-        }
-
-        .alert {
-            padding: 12px 14px;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            font-size: 13px;
-        }
-
-        .alert-success {
-            color: var(--success);
-            background-color: rgba(16, 185, 129, 0.08);
-            border-color: rgba(16, 185, 129, 0.18);
-        }
-
-        .alert-danger {
-            color: #fca5a5;
-            background-color: rgba(239, 68, 68, 0.08);
-            border-color: rgba(239, 68, 68, 0.2);
-        }
-
-        .model-form,
-        .model-editor {
-            display: grid;
-            grid-template-columns: minmax(120px, 0.8fr) minmax(150px, 1fr) minmax(170px, 1.2fr) minmax(180px, 1.2fr) auto auto auto;
-            gap: 12px;
-            align-items: end;
-        }
-
-        .model-editor {
-            padding: 14px 0;
-            border-top: 1px solid var(--border-color);
-        }
-
-        .model-editor:first-of-type {
-            border-top: none;
-            padding-top: 0;
-        }
-
-        .field {
-            display: flex;
-            flex-direction: column;
-            gap: 7px;
-            min-width: 0;
-        }
-
-        label,
-        .checkbox-label {
-            color: var(--text-muted);
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        input[type="text"],
-        select {
-            width: 100%;
-            background-color: var(--bg-control);
-            color: var(--text-main);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 10px 11px;
-            font-size: 13px;
-            outline: none;
-        }
-
-        input[type="text"]:focus,
-        select:focus {
-            border-color: var(--accent-blue);
-        }
-
-        .checkbox-field {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            min-height: 39px;
-            white-space: nowrap;
-        }
-
-        input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-            accent-color: var(--accent-purple);
-        }
-
-        .btn {
-            min-height: 39px;
-            border: none;
-            border-radius: 8px;
-            padding: 9px 15px;
-            cursor: pointer;
-            color: #fff;
-            background: var(--accent-gradient);
-            font-size: 13px;
-            font-weight: 700;
-            white-space: nowrap;
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid var(--border-color);
-            color: var(--text-main);
-        }
-
-        .status-text {
-            color: var(--text-muted);
-            font-size: 12px;
-            line-height: 1.4;
-            min-height: 39px;
-            display: flex;
-            align-items: center;
-        }
-
-        .status-text.ok {
-            color: var(--success);
-        }
-
-        .status-text.missing {
-            color: var(--warning);
-        }
-
-        .empty-state {
-            color: var(--text-muted);
-            font-size: 13px;
-            padding: 14px 0 0;
-        }
-
-        .local-model-grid {
-            display: grid;
-            grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.6fr);
-            gap: 16px;
-            align-items: start;
-        }
-
-        .local-info-panel {
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            background-color: rgba(11, 15, 25, 0.38);
-            padding: 16px;
-        }
-
-        .local-info-title {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 12px;
-            margin-bottom: 12px;
-        }
-
-        .local-info-title h3 {
-            font-size: 16px;
-            margin-bottom: 5px;
-        }
-
-        .local-tag {
-            color: var(--success);
-            border: 1px solid rgba(16, 185, 129, 0.24);
-            background-color: rgba(16, 185, 129, 0.08);
-            padding: 5px 8px;
-            border-radius: 8px;
-            font-size: 11px;
-            font-weight: 700;
-            white-space: nowrap;
-        }
-
-        .resource-usage {
-            border: 1px solid rgba(59, 130, 246, 0.2);
-            border-radius: 8px;
-            background-color: rgba(59, 130, 246, 0.07);
-            padding: 12px;
-            margin-top: 14px;
-        }
-
-        .resource-usage-header {
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-
-        .resource-usage-title {
-            font-size: 12px;
-            font-weight: 700;
-            color: var(--text-main);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .resource-usage-status {
-            border-radius: 999px;
-            padding: 4px 8px;
-            color: var(--success);
-            background-color: rgba(16, 185, 129, 0.1);
-            border: 1px solid rgba(16, 185, 129, 0.24);
-            font-size: 11px;
-            font-weight: 700;
-            white-space: nowrap;
-        }
-
-        .resource-usage-summary {
-            color: var(--text-muted);
-            font-size: 13px;
-            line-height: 1.45;
-            margin-bottom: 9px;
-        }
-
-        .resource-chip-list {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
-        }
-
-        .resource-chip {
-            color: var(--text-main);
-            border: 1px solid var(--border-color);
-            background-color: rgba(11, 15, 25, 0.45);
-            border-radius: 8px;
-            padding: 9px 10px;
-            font-size: 12px;
-            line-height: 1.3;
-        }
-
-        .resource-chip.yes {
-            border-color: rgba(16, 185, 129, 0.25);
-        }
-
-        .resource-chip.optional {
-            border-color: rgba(245, 158, 11, 0.28);
-        }
-
-        .resource-chip.no {
-            border-color: rgba(239, 68, 68, 0.25);
-        }
-
-        .resource-chip-header {
-            display: flex;
-            justify-content: space-between;
-            gap: 8px;
-            align-items: flex-start;
-            margin-bottom: 6px;
-        }
-
-        .resource-chip-name {
-            font-weight: 700;
-        }
-
-        .resource-chip-status {
-            border-radius: 999px;
-            padding: 2px 6px;
-            font-size: 10px;
-            font-weight: 800;
-            white-space: nowrap;
-        }
-
-        .resource-chip-status.yes {
-            color: var(--success);
-            background-color: rgba(16, 185, 129, 0.1);
-        }
-
-        .resource-chip-status.optional {
-            color: var(--warning);
-            background-color: rgba(245, 158, 11, 0.1);
-        }
-
-        .resource-chip-status.no {
-            color: #fca5a5;
-            background-color: rgba(239, 68, 68, 0.1);
-        }
-
-        .resource-chip-detail {
-            color: var(--text-muted);
-            font-size: 12px;
-            line-height: 1.45;
-        }
-
-        .local-detail-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-            margin-top: 14px;
-        }
-
-        .local-detail-box {
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 12px;
-            background-color: rgba(255, 255, 255, 0.025);
-        }
-
-        .local-detail-box h4 {
-            color: var(--text-main);
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 9px;
-        }
-
-        .local-detail-box ul {
-            list-style: none;
-            display: flex;
-            flex-direction: column;
-            gap: 7px;
-        }
-
-        .local-detail-box li,
-        .hardware-row {
-            color: var(--text-muted);
-            font-size: 13px;
-            line-height: 1.45;
-        }
-
-        .hardware-row {
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 5px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .hardware-row:last-child {
-            border-bottom: none;
-        }
-
-        .hardware-row strong {
-            color: var(--text-main);
-            font-weight: 700;
-            white-space: nowrap;
-        }
-
-        @media (max-width: 960px) {
-            body {
-                padding: 14px;
-            }
-
-            .topbar,
-            .section-header {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            .model-form,
-            .model-editor,
-            .local-model-grid,
-            .local-detail-grid,
-            .resource-chip-list {
-                grid-template-columns: 1fr 1fr;
-            }
-
-            .status-text,
-            .btn {
-                width: 100%;
-            }
-        }
-
-        @media (max-width: 640px) {
-            .model-form,
-            .model-editor,
-            .local-model-grid,
-            .local-detail-grid,
-            .resource-chip-list {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style-settings.css') }}">
 </head>
 <body>
     <main class="page">
-        <div class="topbar">
+        <!-- <div class="topbar">
             <div>
                 <h1>Ustawienia modeli AI</h1>
                 <p class="muted">Modele korzystają z kluczy zapisanych w `.env`; wartości kluczy nie są pokazywane w aplikacji.</p>
             </div>
-            <a href="{{ url_for('index_page') }}" class="nav-link">Wróć do panelu</a>
-        </div>
+            <nav>
+                <details class="nav-menu">
+                    <summary aria-label="Menu">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <rect y="2"  width="20" height="2.5" rx="1.25"/>
+                            <rect y="9"  width="20" height="2.5" rx="1.25"/>
+                            <rect y="16" width="20" height="2.5" rx="1.25"/>
+                        </svg>
+                    </summary>
+                    <div class="nav-dropdown">
+                        <a href="{{ url_for('index_page') }}" class="nav-link">Wróć do panelu</a>
+                        <a href="{{ url_for('usage_history') }}" class="nav-link">Zużycie tokenów</a>
+                        <a href="{{ url_for('change_password') }}" class="nav-link">Zmiana hasła</a>
+                        <a href="{{ url_for('logout') }}" class="nav-link" style="color:var(--danger);">Wyloguj się</a>
+                    </div>
+                </details>
+            </nav>
+        </div> -->
 
+
+        <div class="topbar">
+            <div>
+                <h1>Ustawienia aplikacji</h1>
+                <p class="muted">Modele korzystają z kluczy zapisanych w `.env`; wartości kluczy nie są pokazywane w aplikacji.</p>
+            </div>
+            <div class="topbar-right">
+                <button class="icon-btn" onclick="openSidebar()" title="Menu">☰</button>
+            </div>
+        </div>
+        
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
@@ -711,13 +240,150 @@
             {% endif %}
             </div><!-- /.section-body -->
         </section>
+        <section class="section collapsed" id="pricing-table">
+            <div class="section-header">
+                <div>
+                    <h2>Cennik modeli (USD / 1M tokenów)</h2>
+                    <p class="muted">Stałe używane do szacowania kosztów w historii. Modele audio (Whisper) rozliczane są osobno per minuta – nie uwzględnione poniżej.</p>
+                </div>
+                <button class="section-toggle" data-target="pricing-table">Rozwiń</button>
+            </div>
+            <div class="section-body">
+                {% if is_admin %}
+                    <span id="pricing-last-updated" class="muted" style="font-size:12px; white-space:nowrap;"></span>
+                    <button id="updatePricingBtn" class="btn btn-secondary" style="min-height:auto; padding:6px 14px; font-size:12px;">Aktualizuj cenniki</button>
+                {% endif %}
+                {% set active_ids  = models | selectattr('enabled',  'equalto', 1) | map(attribute='model_id') | list %}
+                {% set default_ids = models | selectattr('is_default','equalto', 1) | map(attribute='model_id') | list %}
+                <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                    <thead>
+                        <tr style="border-bottom:1px solid var(--border); color:var(--text-muted);">
+                            <th style="text-align:left; padding:6px 8px;">Model</th>
+                            <th style="text-align:left; padding:6px 8px;"></th>
+                            <th style="text-align:right; padding:6px 8px;">Wejście</th>
+                            <th style="text-align:right; padding:6px 8px;">Wyjście</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for model_id, prices in model_pricing.items() %}
+                        {% set is_active  = model_id in active_ids %}
+                        {% set is_default = model_id in default_ids %}
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.04);{% if not is_active %} opacity:0.45;{% endif %}">
+                            <td style="padding:6px 8px; font-family:monospace; font-size:12px;">{{ model_id }}</td>
+                            <td style="padding:6px 8px; white-space:nowrap; display:flex; gap:5px;">
+                                {% if is_default %}
+                                <span style="font-size:10px; background:rgba(139,92,246,0.25); color:#c4b5fd; border:1px solid rgba(139,92,246,0.5); border-radius:4px; padding:1px 6px;">domyślny</span>
+                                {% endif %}
+                                {% if is_active and not is_default %}
+                                <span style="font-size:10px; background:rgba(34,197,94,0.15); color:#86efac; border:1px solid rgba(34,197,94,0.35); border-radius:4px; padding:1px 6px;">aktywny</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding:6px 8px; text-align:right;">${{ "%.2f"|format(prices.input) }}</td>
+                            <td style="padding:6px 8px; text-align:right;">${{ "%.2f"|format(prices.output) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p class="muted" style="margin-top:10px; font-size:11px;">Wyszarzone — model nie dodany do listy aktywnych. Dodaj go w sekcji „Aktywuj model".</p>
+
+                <p style="margin-top:20px; margin-bottom:8px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted);">Modele audio (USD / minutę)</p>
+                <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                    <thead>
+                        <tr style="border-bottom:1px solid var(--border-color); color:var(--text-muted);">
+                            <th style="text-align:left; padding:6px 8px;">Model</th>
+                            <th style="text-align:left; padding:6px 8px;"></th>
+                            <th style="text-align:right; padding:6px 8px;" colspan="2">Cena / min</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for model_id, price_per_min in audio_pricing.items() %}
+                        {% set is_active  = model_id in active_ids %}
+                        {% set is_default = model_id in default_ids %}
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.04);{% if not is_active %} opacity:0.45;{% endif %}">
+                            <td style="padding:6px 8px; font-family:monospace; font-size:12px;">{{ model_id }}</td>
+                            <td style="padding:6px 8px; white-space:nowrap; display:flex; gap:5px;">
+                                {% if is_default %}
+                                <span style="font-size:10px; background:rgba(139,92,246,0.25); color:#c4b5fd; border:1px solid rgba(139,92,246,0.5); border-radius:4px; padding:1px 6px;">domyślny</span>
+                                {% endif %}
+                                {% if is_active and not is_default %}
+                                <span style="font-size:10px; background:rgba(34,197,94,0.15); color:#86efac; border:1px solid rgba(34,197,94,0.35); border-radius:4px; padding:1px 6px;">aktywny</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding:6px 8px; text-align:right;" colspan="2">${{ "%.5f"|format(price_per_min) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p class="muted" style="margin-top:6px; font-size:11px;">Modele audio rozliczane są per minuta nagrania, nie per token.</p>
+            </div>
+        </section>
+
+        {% if is_admin %}
+        <section class="section" id="admin-panel">
+            <div class="section-header">
+                <div>
+                    <h2>Panel administratora</h2>
+                    <p class="muted">Operacje serwera dostępne tylko dla konta administratora.</p>
+                </div>
+            </div>
+            <div class="section-body">
+                <div class="field">
+                    <label>Restart serwera</label>
+                    <p class="muted" style="margin:4px 0 12px;">Zatrzymuje i ponownie uruchamia proces aplikacji (<code>os.execv</code>).</p>
+                    <button id="restartBtn" class="btn" style="background:var(--danger);" onclick="restartServer()">Restartuj serwer</button>
+                    <div id="restartStatus" style="display:none; margin-top:12px;"></div>
+                </div>
+            </div>
+        </section>
+        {% endif %}
     </main>
+
+
+<div id="ov-sidebar" class="overlay overlay--right">
+    <div class="backdrop" onclick="closeOverlay('ov-sidebar')"></div>
+    <div class="sidebar">
+        <div class="sidebar-profile">
+            <div class="sidebar-avatar">👤</div>
+            <div>
+                <div class="sidebar-name">{{ user.first_name }} {{ user.last_name }}</div>
+                <div class="sidebar-email">{{ user.email }}</div>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="{{ url_for('index_page') }}" class="nav-item">
+                <span class="nav-icon">🏠</span>Panel
+            </a>
+            <!-- <a class="nav-item" onclick="openHistory(); closeOverlay('ov-sidebar');">
+                <span class="nav-icon">🕒</span>Historia transkrypcji
+            </a> -->
+            <a href="{{ url_for('settings') }}" class="nav-item active">
+                <span class="nav-icon">⚙️</span>Ustawienia systemowe
+            </a>
+            <a href="{{ url_for('usage_history') }}" class="nav-item">
+                <span class="nav-icon">📊</span>Zużycie tokenów
+            </a>
+            <a href="{{ url_for('change_password') }}" class="nav-item">
+                <span class="nav-icon">🔑</span>Zmiana hasła
+            </a>
+            <!-- <a class="nav-item" onclick="nav('chat'); closeOverlay('ov-sidebar');">
+                <span class="nav-icon">🤖</span>Czat z AI
+            </a> -->
+        </nav>
+        <div class="sidebar-footer">
+            <a href="{{ url_for('logout') }}" class="logout-btn">
+                <span>↩</span> Wyloguj się
+            </a>
+        </div>
+    </div>
+</div>
+
+
     <script nonce="{{ csp_nonce() }}">
         const MODEL_CATALOG = {{ model_catalog|tojson }};
         const LOCAL_MODEL_REQUIREMENTS = {{ local_model_requirements|tojson }};
 
         // --- Section collapse ---
-        const COLLAPSIBLE = ['local-models', 'model-activate', 'models-setup'];
+        const COLLAPSIBLE = ['local-models', 'model-activate', 'models-setup', 'pricing-table'];
         COLLAPSIBLE.forEach(id => {
             const section = document.getElementById(id);
             if (!section) return;
@@ -921,6 +587,128 @@
             localModelSelect.addEventListener('change', updateLocalModelInfo);
             updateLocalModelInfo();
         }
+
+        {% if is_admin %}
+        const PRICING_LAST_UPDATED = {{ pricing_last_updated or 'null' }};
+
+        function getCsrfToken() {
+            return document.querySelector('meta[name="csrf-token"]').content;
+        }
+
+        function formatPricingAge(ts) {
+            if (!ts) return 'brak danych o aktualizacji';
+            const days = Math.floor((Date.now() / 1000 - ts) / 86400);
+            if (days === 0) return 'zaktualizowano dzisiaj';
+            if (days === 1) return 'zaktualizowano 1 dzień temu';
+            return `zaktualizowano ${days} dni temu`;
+        }
+
+        (function () {
+            const el = document.getElementById('pricing-last-updated');
+            if (el) el.textContent = formatPricingAge(PRICING_LAST_UPDATED);
+            const btn = document.getElementById('updatePricingBtn');
+            if (btn) btn.addEventListener('click', updatePricing);
+        })();
+
+        async function updatePricing() {
+            const btn    = document.getElementById('updatePricingBtn');
+            const status = document.getElementById('pricing-last-updated');
+            btn.disabled = true;
+            btn.textContent = 'Pobieranie…';
+
+            try {
+                const res  = await fetch('/settings/update-pricing', {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCsrfToken() }
+                });
+                const data = await res.json();
+
+                if (!data.ok) {
+                    status.textContent = 'Błąd: ' + (data.error || 'nieznany');
+                    status.style.color = 'var(--danger)';
+                } else if (data.changes && data.changes.length > 0) {
+                    const names = data.changes.map(c => c.model).join(', ');
+                    status.textContent = `Zaktualizowano ${data.changes.length} modeli: ${names}`;
+                    status.style.color = 'var(--success)';
+                    setTimeout(() => {
+                        status.textContent = formatPricingAge(data.timestamp);
+                        status.style.color = '';
+                    }, 5000);
+                } else {
+                    status.textContent = 'Ceny aktualne – brak zmian';
+                    status.style.color = 'var(--success)';
+                    setTimeout(() => { status.textContent = formatPricingAge(PRICING_LAST_UPDATED); status.style.color = ''; }, 3000);
+                }
+            } catch (err) {
+                status.textContent = 'Błąd połączenia: ' + err.message;
+                status.style.color = 'var(--danger)';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Aktualizuj cenniki';
+            }
+        }
+
+        async function restartServer() {
+            const btn    = document.getElementById('restartBtn');
+            const status = document.getElementById('restartStatus');
+            btn.disabled = true;
+            btn.textContent = 'Restartowanie…';
+            status.style.display = '';
+            status.className = 'alert alert-success';
+            status.textContent = 'Wysyłanie żądania…';
+
+            try {
+                const res  = await fetch('/admin/restart', {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCsrfToken() }
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    status.textContent = data.message;
+                    pollUntilAlive();
+                } else {
+                    status.className = 'alert alert-danger';
+                    status.textContent = 'Błąd: ' + (data.error || 'nieznany');
+                    btn.disabled = false;
+                    btn.textContent = 'Restartuj serwer';
+                }
+            } catch (err) {
+                status.className = 'alert alert-danger';
+                status.textContent = 'Błąd połączenia: ' + err.message;
+                btn.disabled = false;
+                btn.textContent = 'Restartuj serwer';
+            }
+        }
+
+        function pollUntilAlive() {
+            const status   = document.getElementById('restartStatus');
+            let attempts   = 0;
+            const maxTries = 30;
+            const id = setInterval(async () => {
+                attempts++;
+                try {
+                    const r = await fetch('/settings', { method: 'GET' });
+                    if (r.ok) {
+                        clearInterval(id);
+                        status.textContent = '✓ Serwer zrestartowany. Odświeżanie strony…';
+                        setTimeout(() => location.reload(), 800);
+                        return;
+                    }
+                } catch {}
+                if (attempts >= maxTries) {
+                    clearInterval(id);
+                    status.className = 'alert alert-danger';
+                    status.textContent = 'Serwer nie odpowiada po restarcie. Sprawdź logi procesu.';
+                }
+            }, 1000);
+        }
+        {% endif %}
     </script>
+<script>
+function openOverlay(id)  { document.getElementById(id).classList.add('open'); }
+function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+function openSidebar()    { openOverlay('ov-sidebar'); }
+</script>
 </body>
 </html>
