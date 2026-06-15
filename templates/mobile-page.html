@@ -536,6 +536,7 @@
 
         <!-- Footer: Logout (Spec 05) -->
         <div class="sidebar-footer">
+            <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button>
             <a href="{{ url_for('logout') }}" class="logout-btn">
                 <span>↩</span> Wyloguj się
             </a>
@@ -634,6 +635,17 @@
     function openSettings() { openOverlay('ov-settings'); }
     function openSidebar()  { openOverlay('ov-sidebar'); }
 
+    function toggleTheme() {
+        const html = document.documentElement;
+        const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        updateThemeBtn();
+    }
+    function updateThemeBtn() {
+        const btn = document.getElementById('theme-toggle');
+        if (btn) btn.textContent = document.documentElement.getAttribute('data-theme') === 'light' ? '☀️' : '🌙';
+    }
 
     function openHistory() {
         histSelectMode = false;
@@ -1503,6 +1515,7 @@
        AUTO-GROW TEXTAREA
     ═══════════════════════════════════════════ */
     document.addEventListener('DOMContentLoaded', () => {
+        updateThemeBtn();
         const ta = document.getElementById('chat-input');
         ta.addEventListener('focus', function () {
             this.style.height = '50vh';
