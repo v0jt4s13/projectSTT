@@ -1,5 +1,5 @@
 {
-  "last_updated": 1781475376.295251,
+  "last_updated": 1781649607.620884,
   "prices": {
     "gpt-5": {
       "input": 1.25,
@@ -20,6 +20,10 @@
     "openai/gpt-oss-20b": {
       "input": 0.075,
       "output": 0.3
+    },
+    "gpt-4o-mini-transcribe": {
+      "input": 1.25,
+      "output": 5.0
     }
   }
 }

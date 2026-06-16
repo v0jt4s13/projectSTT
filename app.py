@@ -95,6 +95,32 @@ def load_env_file(path='.env'):
 
 load_env_file()
 
+_ENV_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+
+def write_env_var(key, value):
+    """Update or insert key=value in .env and apply immediately to os.environ."""
+    lines = []
+    found = False
+    if os.path.exists(_ENV_FILE_PATH):
+        with open(_ENV_FILE_PATH, 'r', encoding='utf-8') as f:
+            for line in f:
+                bare = line.strip().lstrip('export').strip()
+                if bare.startswith(f'{key}='):
+                    lines.append(f'{key}={value}\n')
+                    found = True
+                else:
+                    lines.append(line)
+    if not found:
+        if lines and not lines[-1].endswith('\n'):
+            lines.append('\n')
+        lines.append(f'{key}={value}\n')
+    with open(_ENV_FILE_PATH, 'w', encoding='utf-8') as f:
+        f.writelines(lines)
+    if value:
+        os.environ[key] = value
+    else:
+        os.environ.pop(key, None)
+
 from server_restart import restart_server
 from models_config import (
     PROVIDERS, MODEL_TYPES, MODEL_CATALOG, LOCAL_MODEL_REQUIREMENTS, DEFAULT_AI_MODELS,
@@ -437,13 +463,14 @@ def seed_default_ai_models(cursor):
         cursor.execute(
             """
             INSERT INTO ai_models (provider, model_type, display_name, model_id, enabled, is_default)
-            VALUES (?, ?, ?, ?, 1, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 model["provider"],
                 model["model_type"],
                 model["display_name"],
                 model["model_id"],
+                model.get("enabled", 1),
                 model["is_default"]
             )
         )
@@ -570,6 +597,12 @@ def list_available_openai_chat_models():
         for model in list_ai_models(model_type="chat", enabled_only=True)
         if model["provider"] == "openai" and model["has_api_key"]
     ]
+
+def list_available_chat_models():
+    models = list_ai_models(model_type="chat", enabled_only=True)
+    for model in models:
+        model["chat_label"] = describe_chat_answer_model(model)
+    return models
 
 def get_default_openai_chat_model():
     openai_chat_models = list_available_openai_chat_models()
@@ -702,6 +735,23 @@ def chat_with_cloud(messages, model_config):
         raise RuntimeError("Brak aktywnego modelu AI w ustawieniach")
 
     provider = model_config["provider"]
+
+    if provider == "ollama_ip":
+        base_url = get_provider_api_key("ollama_ip").rstrip("/")
+        if not base_url:
+            raise RuntimeError("Brak OLLAMA_IP_URL w pliku .env. Ustaw np. OLLAMA_IP_URL=http://192.168.1.248:11434")
+        try:
+            response = requests.post(
+                f"{base_url}/v1/chat/completions",
+                headers={"Content-Type": "application/json"},
+                json={"model": model_config["model_id"], "messages": messages},
+                timeout=180
+            )
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+        except requests.exceptions.RequestException as error:
+            raise RuntimeError(f"Błąd połączenia z Ollama ({base_url}): {error}")
+
     api_key = require_provider_api_key(provider)
 
     if provider == "groq":
@@ -1578,7 +1628,7 @@ def init_db():
 init_db()
 
 if LOCAL_MODELS_ENABLED:
-    print("Ładowanie modeli Whisper...")
+    print(f"Ładowanie modeli Whisper... or python app.py --no-local-models")
     models = {
         "tiny": whisper.load_model("tiny"),
         "base": whisper.load_model("base"),
@@ -1767,15 +1817,15 @@ def mobile_page():
     default_cloud_model = get_default_ai_model("transcription")
     default_cloud_model_id = default_cloud_model["id"] if default_cloud_model else None
     default_notes_model = get_default_ai_model("notes")
-    openai_chat_models = list_available_openai_chat_models()
-    for model in openai_chat_models:
-        model["chat_label"] = describe_chat_answer_model(model)
-    default_chat_model = get_default_openai_chat_model()
+    all_chat_models = list_available_chat_models()
+    openai_chat_models = [m for m in all_chat_models if m["provider"] == "openai"]
+    default_chat_model = get_default_ai_model("chat")
     initial_notes_model_label = (
         describe_notes_model(default_notes_model, "online")
         if not LOCAL_MODELS_ENABLED
         else describe_local_notes_model()
     )
+    ollama_ip_url = get_provider_api_key("ollama_ip")
     return render_template(
         'mobile-page.html',
         user=user_data,
@@ -1784,9 +1834,11 @@ def mobile_page():
         initial_notes_model_label=initial_notes_model_label,
         default_cloud_notes_model_label=describe_notes_model(default_notes_model, "online"),
         local_notes_model_label=describe_local_notes_model(),
+        all_chat_models=all_chat_models,
         openai_chat_models=openai_chat_models,
         default_chat_model_id=default_chat_model["id"] if default_chat_model else None,
-        default_chat_model_label=describe_chat_answer_model(default_chat_model) if default_chat_model else "Brak dostępnego modelu OpenAI chat",
+        default_chat_model_label=describe_chat_answer_model(default_chat_model) if default_chat_model else "Brak dostępnego modelu czatu",
+        ollama_ip_configured=bool(ollama_ip_url),
         local_models_enabled=LOCAL_MODELS_ENABLED
     )
 
@@ -1942,7 +1994,8 @@ def settings():
         provider: {
             "label": config["label"],
             "env_key": config["env_key"],
-            "configured": bool(get_provider_api_key(provider))
+            "configured": bool(get_provider_api_key(provider)),
+            "value": get_provider_api_key(provider) if provider == "ollama_ip" else ""
         }
         for provider, config in PROVIDERS.items()
     }
@@ -2148,6 +2201,47 @@ def update_model(model_pk):
 
     flash('Model został zaktualizowany.', 'success')
     return redirect(url_for('settings'))
+
+@app.route('/settings/ollama-ip-url', methods=['POST'])
+def update_ollama_ip_url():
+    if 'user_email' not in session:
+        flash('Brak dostępu. Musisz się najpierw zalogować!', 'danger')
+        return redirect(url_for('login'))
+    url = request.form.get('ollama_ip_url', '').strip().rstrip('/')
+    if url and not url.startswith(('http://', 'https://')):
+        flash('Nieprawidłowy URL — musi zaczynać się od http:// lub https://', 'danger')
+        return redirect(url_for('settings'))
+    write_env_var('OLLAMA_IP_URL', url)
+    if url:
+        flash(f'URL Ollama zapisany: {url}', 'success')
+    else:
+        flash('URL Ollama wyczyszczony.', 'success')
+    return redirect(url_for('settings'))
+
+@app.route('/api/ollama-ip/status', methods=['GET'])
+@limiter.limit("30 per minute")
+def ollama_ip_status():
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    base_url = get_provider_api_key("ollama_ip").rstrip("/")
+    if not base_url:
+        return jsonify({"available": False, "reason": "no_url", "url": None})
+
+    try:
+        resp = requests.get(f"{base_url}/api/tags", timeout=3)
+        resp.raise_for_status()
+        data = resp.json()
+        models_list = [m.get("name") for m in data.get("models", [])]
+        return jsonify({"available": True, "url": base_url, "models": models_list})
+    except requests.exceptions.ConnectionError:
+        return jsonify({"available": False, "reason": "connection_error", "url": base_url})
+    except requests.exceptions.Timeout:
+        return jsonify({"available": False, "reason": "timeout", "url": base_url})
+    except Exception:
+        return jsonify({"available": False, "reason": "error", "url": base_url})
+
 
 @app.route('/api/models', methods=['GET'])
 def api_models():
@@ -2785,7 +2879,10 @@ def ask_question():
     try:
         # 4. Zapytanie do niezależnego modelu czatu. OpenAI używa Responses API z web_search.
         response_prompt = build_web_search_question_prompt(transkrypcja, context_rows, question)
-        chat_model = get_default_ai_model("chat")
+        chat_model_id = data.get('chat_model_id')
+        chat_model = get_ai_model_by_id(chat_model_id, "chat") if chat_model_id else None
+        if not chat_model:
+            chat_model = get_default_ai_model("chat")
         app.logger.info(
             "ask-question: ai request start record_id=%s provider=%s model=%s prompt_len=%s",
             record_id,

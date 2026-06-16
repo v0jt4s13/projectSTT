@@ -13,12 +13,12 @@ Zmiany już wdrożone przez Claude (pkt 1-3):
 
 ### Wymagające decyzji / pracy manualnej
 
-**[WYSOKI] SSRF — walidacja URL przed pobraniem**
+**[NISKI] SSRF — walidacja URL przed pobraniem**
 - `app.py:853` — `fetch_webpage_content(url)` pobiera dowolny URL bez sprawdzania zakresu IP
 - `app.py:1572` — `download_youtube_audio(youtube_url)` bez weryfikacji, że to faktycznie YouTube
 - Naprawić: odrzucać URL z prywatnymi zakresami IP (127.x, 10.x, 192.168.x, 172.16-31.x) i wymuszać https://
 
-**[WYSOKI] XSS — innerHTML z treścią AI**
+**[ŚREDNI] XSS — innerHTML z treścią AI**
 - `templates/index.html` — `chatResponse.innerHTML = chatHistoryHtml` wstawia AI-generowany markdown do DOM
 - `templates/mobile-page.html` — analogiczne miejsca
 - Naprawić: dodać [DOMPurify](https://github.com/cure53/DOMPurify) przed każdym `innerHTML =` z zewnętrzną treścią
@@ -41,20 +41,20 @@ Zmiany już wdrożone przez Claude (pkt 1-3):
 - `app.py:2206+` — `/change-password` nie sprawdza wymagań (8 znaków, wielka litera, cyfra, znak specjalny)
 - Przenieść funkcję walidacji z `/register` i użyć jej też tutaj
 
+**[ŚREDNI] Brak możliwości odzyskania hasła**
+- Dopisać funkcję umożliwiającą odzyskanei dostępu do konta
+
 ### Konfiguracja serwera produkcyjnego
 
-**[KRYTYCZNY] Nie używać `python app.py` na produkcji**
+**[✅] Nie używać `python app.py` na produkcji**
 - Użyć gunicorn/uwsgi: `gunicorn -w 4 app:app`
 - Ustawić `FLASK_ENV=production` w zmiennych środowiskowych serwera
 
-**[WYSOKI] Zabezpieczyć plik users.db**
+**[WYSOKI] Zabezpieczyć plik users.db oraz openai_usage_history.jsonl**
 - Plik bazy danych jest w katalogu aplikacji
-- Upewnić się, że serwer WWW (nginx/apache) nie serwuje plików `.db` bezpośrednio
-- Rozważyć przeniesienie poza katalog webroot
-
-**[WYSOKI] Zabezpieczyć openai_usage_history.jsonl**
-- Plik zawiera dane użycia API i może zawierać fragmenty zapytań
-- Upewnić się, że nie jest dostępny publicznie (jak wyżej)
+- ✅ Upewnić się, że serwer WWW (nginx/apache) nie serwuje plików `.db` bezpośrednio
+- Przenieś pliki poza katalog webroot, do bezpiecznej lokalizacji
+- Plik openai_usage_history.jsonl zawiera dane użycia API i może zawierać fragmenty zapytań
 
 **[NISKI] Rate limiting — rozważyć Redis w produkcji**
 - Obecna konfiguracja używa `memory://` (reset przy restarcie aplikacji)

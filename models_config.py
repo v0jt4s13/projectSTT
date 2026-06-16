@@ -12,6 +12,10 @@ PROVIDERS = {
     "openai": {
         "label": "OpenAI",
         "env_key": "OPENAI_API_KEY"
+    },
+    "ollama_ip": {
+        "label": "Ollama (sieć)",
+        "env_key": "OLLAMA_IP_URL"
     }
 }
 
@@ -62,6 +66,26 @@ def _build_model_catalog():
                 {"id": "gpt-4.1-mini", "label": "GPT-4.1 mini"},
                 {"id": "gpt-4.1", "label": "GPT-4.1"}
             ]
+        },
+        "ollama_ip": {
+            "chat": [
+                {"id": "qwen2.5-coder:7b", "label": "Qwen2.5 Coder 7B"},
+                {"id": "qwen2.5:7b", "label": "Qwen2.5 7B"},
+                {"id": "llama3.2", "label": "Llama 3.2"},
+                {"id": "llama3", "label": "Llama 3"},
+                {"id": "gemma3:12b", "label": "Gemma 3 12B"},
+                {"id": "mistral", "label": "Mistral"},
+                {"id": "phi4", "label": "Phi-4"},
+            ],
+            "notes": [
+                {"id": "qwen2.5-coder:7b", "label": "Qwen2.5 Coder 7B"},
+                {"id": "qwen2.5:7b", "label": "Qwen2.5 7B"},
+                {"id": "llama3.2", "label": "Llama 3.2"},
+                {"id": "llama3", "label": "Llama 3"},
+                {"id": "gemma3:12b", "label": "Gemma 3 12B"},
+                {"id": "mistral", "label": "Mistral"},
+                {"id": "phi4", "label": "Phi-4"},
+            ]
         }
     }
 
@@ -111,6 +135,22 @@ DEFAULT_AI_MODELS = [
         "display_name": "GPT-5.4",
         "model_id": "gpt-5.4",
         "is_default": 1
+    },
+    {
+        "provider": "ollama_ip",
+        "model_type": "chat",
+        "display_name": "Qwen2.5 Coder 7B",
+        "model_id": "qwen2.5-coder:7b",
+        "enabled": 0,
+        "is_default": 0
+    },
+    {
+        "provider": "ollama_ip",
+        "model_type": "notes",
+        "display_name": "Qwen2.5 Coder 7B",
+        "model_id": "qwen2.5-coder:7b",
+        "enabled": 0,
+        "is_default": 0
     }
 ]
 

@@ -61,18 +61,37 @@
             <div class="section-header">
                 <div>
                     <h2>Klucze API dostawców</h2>
-                    <p class="muted">Wymagane nazwy zmiennych: `GROQ_API_KEY` oraz `OPENAI_API_KEY`.</p>
+                    <p class="muted">Wymagane zmienne: <code>GROQ_API_KEY</code>, <code>OPENAI_API_KEY</code> — ustaw w pliku <code>.env</code>.</p>
                 </div>
                 <div class="key-status">
                     {% for provider, status in api_key_status.items() %}
+                        {% if provider != 'ollama_ip' %}
                         <span class="key-pill {{ 'ok' if status.configured else 'missing' }}">
                             {{ status.env_key }}: {{ 'ustawiony' if status.configured else 'brak' }}
                         </span>
+                        {% endif %}
                     {% endfor %}
                 </div>
                 <div>
                     Zmień motyw <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button>
                 </div>
+            </div>
+            <div class="section-body" style="padding-top:8px;">
+                <form action="{{ url_for('update_ollama_ip_url') }}" method="POST"
+                      style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <label style="font-size:13px; white-space:nowrap; color:var(--text-muted);">
+                        Ollama (sieć) — URL:
+                    </label>
+                    <input type="url" name="ollama_ip_url"
+                           value="{{ api_key_status.ollama_ip.value if api_key_status.ollama_ip else '' }}"
+                           placeholder="http://192.168.1.248:11434"
+                           style="flex:1; min-width:220px; max-width:360px;">
+                    <button type="submit" class="btn btn-secondary">Zapisz URL</button>
+                    <span class="key-pill {{ 'ok' if api_key_status.ollama_ip.configured else 'missing' }}" style="margin:0;">
+                        {{ 'URL OK' if api_key_status.ollama_ip.configured else 'Brak URL' }}
+                    </span>
+                </form>
             </div>
         </section>
 
@@ -289,7 +308,11 @@
                         </label>
                         <div class="field">
                             <span class="status-text {{ 'ok' if model.has_api_key else 'missing' }}">
-                                {{ 'Klucz OK' if model.has_api_key else 'Brak klucza' }}
+                                {% if model.provider == 'ollama_ip' %}
+                                    {{ 'URL OK' if model.has_api_key else 'Brak URL' }}
+                                {% else %}
+                                    {{ 'Klucz OK' if model.has_api_key else 'Brak klucza' }}
+                                {% endif %}
                             </span>
                             <button type="submit" class="btn btn-secondary">Zapisz</button>
                         </div>

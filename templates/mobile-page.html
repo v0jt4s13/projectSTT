@@ -253,17 +253,22 @@
         <div class="topbar-left">
             <h1>Czat z AI</h1>
             <select id="chat-model-picker" class="topbar-select">
-                {% if openai_chat_models %}
-                    {% for m in openai_chat_models %}
+                {% if all_chat_models %}
+                    {% for m in all_chat_models %}
                         <option value="{{ m.id }}"
+                            data-provider="{{ m.provider }}"
                             {% if m.id == default_chat_model_id %}selected{% endif %}>
-                            {{ m.display_name }}
+                            {% if m.provider == 'ollama_ip' %}[Sieć] {% endif %}{{ m.display_name }}
                         </option>
                     {% endfor %}
                 {% else %}
                     <option value="">Brak modeli</option>
                 {% endif %}
             </select>
+            <span id="ollama-status-badge" style="display:none; align-items:center; gap:4px; font-size:10px; color:var(--text-muted); white-space:nowrap;">
+                <span id="ollama-dot" style="width:7px; height:7px; border-radius:50%; background:var(--text-muted); display:inline-block; flex-shrink:0;"></span>
+                <span id="ollama-status-text">…</span>
+            </span>
         </div>
         <div class="topbar-right">
             <button class="back-btn" onclick="nav('dashboard')">‹</button>
@@ -454,15 +459,16 @@
         <div class="settings-row">
             <div class="settings-row-lbl">Model czatu</div>
             <select id="sel-chat-model" class="f-select">
-                {% if openai_chat_models %}
-                    {% for m in openai_chat_models %}
+                {% if all_chat_models %}
+                    {% for m in all_chat_models %}
                         <option value="{{ m.id }}"
+                            data-provider="{{ m.provider }}"
                             {% if m.id == default_chat_model_id %}selected{% endif %}>
-                            {{ m.display_name }}
+                            {% if m.provider == 'ollama_ip' %}[Sieć] {% endif %}{{ m.display_name }}
                         </option>
                     {% endfor %}
                 {% else %}
-                    <option value="">Brak modeli OpenAI</option>
+                    <option value="">Brak modeli</option>
                 {% endif %}
             </select>
         </div>
@@ -564,8 +570,52 @@
     function getCsrfToken() {
         return document.querySelector('meta[name="csrf-token"]').content;
     }
-    const LOCAL_MODELS_ENABLED = {{ 'true' if local_models_enabled else 'false' }};
-    const DEFAULT_CHAT_LABEL   = {{ (default_chat_model_label or '')|tojson }};
+    const LOCAL_MODELS_ENABLED  = {{ 'true' if local_models_enabled else 'false' }};
+    const DEFAULT_CHAT_LABEL    = {{ (default_chat_model_label or '')|tojson }};
+    const OLLAMA_IP_CONFIGURED  = {{ 'true' if ollama_ip_configured else 'false' }};
+
+    function getSelectedChatProvider() {
+        const picker = document.getElementById('chat-model-picker');
+        if (!picker) return null;
+        const opt = picker.options[picker.selectedIndex];
+        return opt ? opt.dataset.provider : null;
+    }
+
+    async function checkOllamaStatus() {
+        const badge = document.getElementById('ollama-status-badge');
+        const dot   = document.getElementById('ollama-dot');
+        const txt   = document.getElementById('ollama-status-text');
+        badge.style.display = 'flex';
+        dot.style.background = 'var(--text-muted)';
+        txt.textContent = '…';
+        try {
+            const res  = await fetch(BASE + '/api/ollama-ip/status', { headers: { 'X-CSRFToken': getCsrfToken() } });
+            const data = await res.json();
+            if (data.available) {
+                dot.style.background = 'var(--green)';
+                const n = data.models ? data.models.length : 0;
+                txt.textContent = `Połączono (${n} modeli)`;
+            } else {
+                dot.style.background = data.reason === 'no_url' ? 'var(--text-muted)' : 'var(--red)';
+                txt.textContent = data.reason === 'no_url'         ? 'Brak URL'
+                                : data.reason === 'timeout'        ? 'Brak odpowiedzi'
+                                : 'Niedostępny';
+            }
+        } catch {
+            dot.style.background = 'var(--red)';
+            txt.textContent = 'Błąd';
+        }
+    }
+
+    function updateOllamaStatusBadge() {
+        const badge = document.getElementById('ollama-status-badge');
+        if (!badge) return;
+        if (getSelectedChatProvider() === 'ollama_ip') {
+            checkOllamaStatus();
+        } else {
+            badge.style.display = 'none';
+        }
+    }
 
     /* ═══════════════════════════════════════════
        STATE
@@ -1548,11 +1598,15 @@
         if (selChatModel && chatModelPicker) {
             selChatModel.addEventListener('change', () => {
                 chatModelPicker.value = selChatModel.value;
+                updateOllamaStatusBadge();
             });
             chatModelPicker.addEventListener('change', () => {
                 selChatModel.value = chatModelPicker.value;
+                updateOllamaStatusBadge();
             });
         }
+
+        updateOllamaStatusBadge();
     });
 </script>
 </body>
