@@ -1338,7 +1338,7 @@ def extract_authenticity_score(notes_text):
     return max(0, min(100, int(match.group(1))))
 
 
-def generate_audio_notes(raw_text, processing_mode, preferred_provider=None, model_used=None, notes_mode='full'):
+def generate_audio_notes(raw_text, processing_mode, preferred_provider=None, model_used=None, notes_mode='full', notes_model_id=None):
     if not raw_text.strip():
         return "", None
 
@@ -1346,7 +1346,11 @@ def generate_audio_notes(raw_text, processing_mode, preferred_provider=None, mod
     # print(f"[generate_audio_notes] Built prompt len: {len(prompt)} ==> {prompt}\n\n")
 
     if processing_mode == "online":
-        notes_model = get_default_ai_model("notes", preferred_provider=preferred_provider)
+        notes_model = (
+            get_ai_model_by_id(notes_model_id, "notes")
+            if notes_model_id
+            else None
+        ) or get_default_ai_model("notes", preferred_provider=preferred_provider)
         return chat_with_cloud([{"role": "user", "content": prompt}], notes_model), notes_model
 
     try:
@@ -1365,7 +1369,7 @@ def get_default_processing_mode():
     return "offline" if LOCAL_MODELS_ENABLED else "online"
 
 # Główna funkcja obsługująca transkrypcję audio i generowanie notatek AI
-def process_audio_transcription(file_path, processing_mode='offline', model_name='base', cloud_model_id=None, language='auto', task='transcribe', notes_mode='full'):
+def process_audio_transcription(file_path, processing_mode='offline', model_name='base', cloud_model_id=None, language='auto', task='transcribe', notes_mode='full', notes_model_id=None):
     processing_mode = normalize_processing_mode(processing_mode)
     model_name = str(model_name or "base").strip()
     language = str(language or "auto").strip()
@@ -1385,7 +1389,8 @@ def process_audio_transcription(file_path, processing_mode='offline', model_name
             processing_mode,
             preferred_provider=transcription_model["provider"],
             model_used=str(model_name or cloud_model_id).strip(),
-            notes_mode=notes_mode
+            notes_mode=notes_mode,
+            notes_model_id=notes_model_id
         )
 
         return {
@@ -1421,13 +1426,19 @@ def process_audio_transcription(file_path, processing_mode='offline', model_name
         "model_used": f"Lokalny Whisper ({model_name})"
     }
 
-def save_transcription_history(user_email, display_title, raw_text, notes, notes_model_used="", openai_usage_history=None):
+def save_transcription_history(user_email, display_title, raw_text, notes, notes_model_used="", openai_usage_history=None, project_id=None):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+    if project_id is None:
+        cursor.execute(
+            "INSERT INTO projects (user_email, name) VALUES (?, ?)",
+            (user_email, display_title)
+        )
+        project_id = cursor.lastrowid
     cursor.execute(
         """
-        INSERT INTO history (user_email, filename, raw_text, ai_notes, notes_model_used, openai_usage_history)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO history (user_email, filename, raw_text, ai_notes, notes_model_used, openai_usage_history, project_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_email,
@@ -1435,13 +1446,41 @@ def save_transcription_history(user_email, display_title, raw_text, notes, notes
             raw_text.strip(),
             notes.strip(),
             str(notes_model_used or "").strip(),
-            serialize_openai_usage_history(openai_usage_history)
+            serialize_openai_usage_history(openai_usage_history),
+            project_id
         )
     )
     record_id = cursor.lastrowid
     conn.commit()
     conn.close()
-    return record_id
+    return record_id, project_id
+
+def get_project_sources(project_id, user_email):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, filename, raw_text FROM history WHERE project_id = ? AND user_email = ? ORDER BY created_at",
+        (project_id, user_email)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"id": r[0], "filename": r[1], "raw_text": r[2]} for r in rows]
+
+def build_project_context(sources, max_chars=60_000):
+    parts = []
+    total = 0
+    for i, src in enumerate(sources, 1):
+        header = f"=== Źródło {i}: {src['filename']} ==="
+        text = src['raw_text'] or ''
+        chunk = f"{header}\n{text}"
+        if total + len(chunk) > max_chars:
+            remaining = max_chars - total
+            if remaining > len(header) + 100:
+                parts.append(f"{header}\n{text[:remaining - len(header) - 1]}")
+            break
+        parts.append(chunk)
+        total += len(chunk)
+    return "\n\n".join(parts)
 
 def get_payload_setting(payload, settings, key, default=None):
     if key in settings:
@@ -1548,6 +1587,19 @@ def init_db():
         )
     ''')
     cursor.execute('''
+        CREATE TABLE IF NOT EXISTS projects (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email TEXT NOT NULL,
+            name       TEXT NOT NULL DEFAULT 'Nowy projekt',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_email) REFERENCES users(email) ON DELETE CASCADE
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_projects_user
+        ON projects(user_email, created_at)
+    ''')
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_email TEXT NOT NULL,
@@ -1556,6 +1608,7 @@ def init_db():
             ai_notes TEXT NOT NULL,
             notes_model_used TEXT DEFAULT '',
             openai_usage_history TEXT DEFAULT '',
+            project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_email) REFERENCES users(email)
         )
@@ -1566,6 +1619,16 @@ def init_db():
         cursor.execute("ALTER TABLE history ADD COLUMN notes_model_used TEXT DEFAULT ''")
     if "openai_usage_history" not in history_columns:
         cursor.execute("ALTER TABLE history ADD COLUMN openai_usage_history TEXT DEFAULT ''")
+    if "project_id" not in history_columns:
+        cursor.execute("ALTER TABLE history ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL")
+    # migrate: każdy history bez projektu dostaje własny projekt (single-source)
+    cursor.execute("SELECT id, user_email, filename, created_at FROM history WHERE project_id IS NULL")
+    for hid, email, fname, hcreated in cursor.fetchall():
+        cursor.execute(
+            "INSERT INTO projects (user_email, name, created_at) VALUES (?, ?, ?)",
+            (email, fname, hcreated)
+        )
+        cursor.execute("UPDATE history SET project_id = ? WHERE id = ?", (cursor.lastrowid, hid))
 
     # NOWA TABELA: Pamięć czatu (Prawdziwa rozmowa)
     cursor.execute('''
@@ -1586,6 +1649,43 @@ def init_db():
         cursor.execute("ALTER TABLE chat_history ADD COLUMN model_used TEXT DEFAULT ''")
     if "openai_usage_history" not in chat_history_columns:
         cursor.execute("ALTER TABLE chat_history ADD COLUMN openai_usage_history TEXT DEFAULT ''")
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS project_chat_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            role       TEXT NOT NULL,
+            content    TEXT NOT NULL,
+            model_used TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_proj_chat_lookup
+        ON project_chat_history(project_id, id)
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS compare_results (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email    TEXT NOT NULL,
+            display_name  TEXT NOT NULL,
+            provider      TEXT NOT NULL,
+            notes_mode    TEXT NOT NULL DEFAULT 'full',
+            source_chars  INTEGER NOT NULL DEFAULT 0,
+            tokens_in_est INTEGER NOT NULL DEFAULT 0,
+            tokens_out_est INTEGER NOT NULL DEFAULT 0,
+            timing_ms     INTEGER NOT NULL DEFAULT 0,
+            success       INTEGER NOT NULL DEFAULT 1,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_email) REFERENCES users(email) ON DELETE CASCADE
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_compare_results_user
+        ON compare_results(user_email, created_at)
+    ''')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS ai_models (
@@ -1820,6 +1920,8 @@ def mobile_page():
     all_chat_models = list_available_chat_models()
     openai_chat_models = [m for m in all_chat_models if m["provider"] == "openai"]
     default_chat_model = get_default_ai_model("chat")
+    notes_models = list_ai_models(model_type="notes", enabled_only=True)
+    default_notes_model_id = default_notes_model["id"] if default_notes_model else None
     initial_notes_model_label = (
         describe_notes_model(default_notes_model, "online")
         if not LOCAL_MODELS_ENABLED
@@ -1838,6 +1940,8 @@ def mobile_page():
         openai_chat_models=openai_chat_models,
         default_chat_model_id=default_chat_model["id"] if default_chat_model else None,
         default_chat_model_label=describe_chat_answer_model(default_chat_model) if default_chat_model else "Brak dostępnego modelu czatu",
+        notes_models=notes_models,
+        default_notes_model_id=default_notes_model_id,
         ollama_ip_configured=bool(ollama_ip_url),
         local_models_enabled=LOCAL_MODELS_ENABLED
     )
@@ -2293,7 +2397,7 @@ def get_history():
 
     cursor.execute(
         """
-        SELECT id, filename, raw_text, ai_notes, COALESCE(notes_model_used, ''), COALESCE(openai_usage_history, ''), datetime(created_at, 'localtime')
+        SELECT id, filename, raw_text, ai_notes, COALESCE(notes_model_used, ''), COALESCE(openai_usage_history, ''), datetime(created_at, 'localtime'), project_id
         FROM history
         WHERE user_email = ?
         ORDER BY created_at DESC
@@ -2344,6 +2448,7 @@ def get_history():
             "created_at": r[6],
             "chat_messages": chat_messages,
             "chat_count": len(chat_messages),
+            "project_id": r[7],
             "authenticity_score": extract_authenticity_score(r[3]),
             "token_summary": compute_token_summary([notes_usage] + chat_usage_lists),
         })
@@ -2372,6 +2477,14 @@ def transcribe():
     notes_mode = request.form.get('notes_mode', 'full').strip()
     if notes_mode not in {'full', 'summary', 'overview', 'bullets', 'prompt', 'reel-prepare'}:
         notes_mode = 'full'
+    notes_model_id = request.form.get('notes_model_id') or None
+    project_id_form = None
+    _raw_pid = request.form.get('project_id')
+    if _raw_pid:
+        try:
+            project_id_form = int(_raw_pid)
+        except (ValueError, TypeError):
+            project_id_form = None
 
     file_path = None
     display_title = youtube_url or webpage_url or custom_name or "Przesłany plik"
@@ -2440,7 +2553,8 @@ def transcribe():
                 preferred_provider = selected_transcription_model["provider"] if selected_transcription_model else None
                 notatki_ai, notes_model = generate_audio_notes(
                     surowy_tekst, processing_mode,
-                    preferred_provider=preferred_provider, model_used=None, notes_mode=notes_mode
+                    preferred_provider=preferred_provider, model_used=None,
+                    notes_mode=notes_mode, notes_model_id=notes_model_id
                 )
                 notes_model_used = describe_notes_model(notes_model, processing_mode)
             else:
@@ -2460,7 +2574,8 @@ def transcribe():
                 preferred_provider = selected_transcription_model["provider"] if selected_transcription_model else None
                 notatki_ai, notes_model = generate_audio_notes(
                     surowy_tekst, processing_mode,
-                    preferred_provider=preferred_provider, model_used=None, notes_mode=notes_mode
+                    preferred_provider=preferred_provider, model_used=None,
+                    notes_mode=notes_mode, notes_model_id=notes_model_id
                 )
                 notes_model_used = describe_notes_model(notes_model, processing_mode)
             else:
@@ -2492,7 +2607,8 @@ def transcribe():
                 preferred_provider = selected_transcription_model["provider"] if selected_transcription_model else None
                 notatki_ai, notes_model = generate_audio_notes(
                     surowy_tekst, processing_mode,
-                    preferred_provider=preferred_provider, model_used=None, notes_mode=notes_mode
+                    preferred_provider=preferred_provider, model_used=None,
+                    notes_mode=notes_mode, notes_model_id=notes_model_id
                 )
                 notes_model_used = describe_notes_model(notes_model, processing_mode)
                 model_used_info = f"Strona internetowa + notatki: {describe_cloud_model(notes_model)}"
@@ -2513,7 +2629,8 @@ def transcribe():
                 cloud_model_id=cloud_model_id,
                 language=language,
                 task=task,
-                notes_mode=notes_mode
+                notes_mode=notes_mode,
+                notes_model_id=notes_model_id
             )
             surowy_tekst = transcription_result["text"]
             notatki_ai = transcription_result["notes"]
@@ -2527,17 +2644,19 @@ def transcribe():
 
         try:
             openai_usage_history = get_current_openai_usage_history()
-            new_id = save_transcription_history(
+            new_id, new_project_id = save_transcription_history(
                 user_email,
                 display_title,
                 surowy_tekst,
                 notatki_ai,
                 notes_model_used,
-                openai_usage_history
+                openai_usage_history,
+                project_id=project_id_form
             )
         except Exception as e:
             print(f"Nie udało się zapisać historii transkrypcji: {e}")
             new_id = None
+            new_project_id = None
 
         return jsonify({
             "text": surowy_tekst,
@@ -2548,6 +2667,7 @@ def transcribe():
             "task": task,
             "saved_name": display_title,
             "record_id": new_id,
+            "project_id": new_project_id,
             "openai_usage_history": openai_usage_history,
             "authenticity_score": extract_authenticity_score(notatki_ai),
         })
@@ -2622,9 +2742,10 @@ def api_youtube_transcribe():
             notes_model_used = describe_notes_model(notes_model, processing_mode)
             saved_name = custom_name if custom_name else yt_transcript["title"]
             record_id = None
+            project_id = None
             openai_usage_history = get_current_openai_usage_history()
             if save_to_history:
-                record_id = save_transcription_history(
+                record_id, project_id = save_transcription_history(
                     user_email, saved_name,
                     yt_transcript["text"], notatki_ai, notes_model_used, openai_usage_history
                 )
@@ -2639,6 +2760,7 @@ def api_youtube_transcribe():
                 "saved": record_id is not None,
                 "saved_name": saved_name,
                 "record_id": record_id,
+                "project_id": project_id,
                 "openai_usage_history": openai_usage_history,
                 "authenticity_score": extract_authenticity_score(notatki_ai),
                 "youtube": {"id": yt_transcript["video_id"], "title": yt_transcript["title"],
@@ -2660,9 +2782,10 @@ def api_youtube_transcribe():
 
         saved_name = custom_name if custom_name else f"YT: {youtube_download['title']}"
         record_id = None
+        project_id = None
         openai_usage_history = get_current_openai_usage_history()
         if save_to_history:
-            record_id = save_transcription_history(
+            record_id, project_id = save_transcription_history(
                 user_email,
                 saved_name,
                 transcription_result["text"],
@@ -2682,6 +2805,7 @@ def api_youtube_transcribe():
             "saved": record_id is not None,
             "saved_name": saved_name,
             "record_id": record_id,
+            "project_id": project_id,
             "openai_usage_history": openai_usage_history,
             "authenticity_score": extract_authenticity_score(transcription_result["notes"]),
             "youtube": {
@@ -2758,9 +2882,10 @@ def api_webpage_read():
             model_used_info = "Strona internetowa + Ollama (Llama 3)"
 
         record_id = None
+        project_id = None
         openai_usage_history = get_current_openai_usage_history()
         if save_to_history:
-            record_id = save_transcription_history(
+            record_id, project_id = save_transcription_history(
                 user_email,
                 saved_name,
                 web_text,
@@ -2778,6 +2903,7 @@ def api_webpage_read():
             "saved": record_id is not None,
             "saved_name": saved_name,
             "record_id": record_id,
+            "project_id": project_id,
             "openai_usage_history": openai_usage_history,
             "authenticity_score": extract_authenticity_score(notes),
             "webpage": {
@@ -2798,8 +2924,8 @@ def new_chat():
     user_email = get_authenticated_user()
     if not user_email:
         return jsonify({"error": "Brak autoryzacji"}), 401
-    record_id = save_transcription_history(user_email, 'Nowy czat', '', '')
-    return jsonify({"record_id": record_id})
+    record_id, project_id = save_transcription_history(user_email, 'Nowy czat', '', '')
+    return jsonify({"record_id": record_id, "project_id": project_id})
 
 @app.route('/ask-question', methods=['POST'])
 @limiter.limit("60 per hour; 10 per minute")
@@ -2821,107 +2947,87 @@ def ask_question():
         return jsonify({"error": "Nieprawidłowy JSON"}), 400
 
     record_id = data.get('id')
+    project_id = data.get('project_id')
     question = str(data.get('question') or '').strip()
-    app.logger.info(
-        "ask-question: received user=%s record_id=%s question_len=%s payload_keys=%s",
-        user_email,
-        record_id,
-        len(question),
-        list(data.keys())
-    )
-    
-    if not record_id or not question:
-        app.logger.warning(
-            "ask-question: invalid payload user=%s record_id=%s question_len=%s",
-            user_email,
-            record_id,
-            len(question)
-        )
-        return jsonify({"error": "Brak ID nagrania lub pytania"}), 400
-        
+
+    if not (record_id or project_id) or not question:
+        app.logger.warning("ask-question: invalid payload user=%s", user_email)
+        return jsonify({"error": "Brak ID nagrania/projektu lub pytania"}), 400
+
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    
-    # 1. Sprawdzenie uprawnień i pobranie tekstu źródłowego
-    cursor.execute("SELECT raw_text FROM history WHERE id = ? AND user_email = ?", (record_id, user_email))
-    row = cursor.fetchone()
-    
-    if not row:
-        conn.close()
-        app.logger.warning(
-            "ask-question: record not found user=%s record_id=%s",
-            user_email,
-            record_id
+    use_project_chat = False
+
+    if project_id:
+        # project path — verify ownership
+        cursor.execute("SELECT id FROM projects WHERE id = ? AND user_email = ?", (project_id, user_email))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({"error": "Nie znaleziono projektu"}), 404
+        sources = get_project_sources(project_id, user_email)
+        if not sources:
+            conn.close()
+            return jsonify({"error": "Projekt nie ma żadnych źródeł"}), 404
+        if len(sources) == 1:
+            record_id = sources[0]['id']
+            transkrypcja = sources[0]['raw_text']
+        else:
+            transkrypcja = build_project_context(sources)
+            use_project_chat = True
+        if use_project_chat:
+            cursor.execute(
+                "SELECT role, content FROM (SELECT role, content, id FROM project_chat_history WHERE project_id = ? ORDER BY id DESC LIMIT 6) ORDER BY id ASC",
+                (project_id,)
+            )
+        else:
+            cursor.execute(
+                "SELECT role, content FROM (SELECT role, content, id FROM chat_history WHERE record_id = ? ORDER BY id DESC LIMIT 6) ORDER BY id ASC",
+                (record_id,)
+            )
+    else:
+        # legacy single-record path
+        cursor.execute("SELECT raw_text FROM history WHERE id = ? AND user_email = ?", (record_id, user_email))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            app.logger.warning("ask-question: record not found user=%s record_id=%s", user_email, record_id)
+            return jsonify({"error": "Nie znaleziono nagrania w Twojej historii"}), 404
+        transkrypcja = row[0]
+        cursor.execute(
+            "SELECT role, content FROM (SELECT role, content, id FROM chat_history WHERE record_id = ? ORDER BY id DESC LIMIT 6) ORDER BY id ASC",
+            (record_id,)
         )
-        return jsonify({"error": "Nie znaleziono nagrania w Twojej historii"}), 404
-        
-    transkrypcja = row[0]
-    app.logger.info(
-        "ask-question: record loaded user=%s record_id=%s transcript_len=%s",
-        user_email,
-        record_id,
-        len(transkrypcja or "")
-    )
-    
-    # 2. Pobranie historii czatu (ostatnie 6 wiadomości chronologicznie)
-    cursor.execute(
-        "SELECT role, content FROM (SELECT role, content, id FROM chat_history WHERE record_id = ? ORDER BY id DESC LIMIT 6) ORDER BY id ASC", 
-        (record_id,)
-    )
+
     context_rows = cursor.fetchall()
     conn.close()
-    app.logger.info(
-        "ask-question: context loaded record_id=%s context_count=%s",
-        record_id,
-        len(context_rows)
-    )
-    
+
     try:
-        # 4. Zapytanie do niezależnego modelu czatu. OpenAI używa Responses API z web_search.
         response_prompt = build_web_search_question_prompt(transkrypcja, context_rows, question)
         chat_model_id = data.get('chat_model_id')
         chat_model = get_ai_model_by_id(chat_model_id, "chat") if chat_model_id else None
         if not chat_model:
             chat_model = get_default_ai_model("chat")
-        app.logger.info(
-            "ask-question: ai request start record_id=%s provider=%s model=%s prompt_len=%s",
-            record_id,
-            chat_model.get("provider") if chat_model else None,
-            chat_model.get("model_id") if chat_model else None,
-            len(response_prompt)
-        )
         ai_answer = answer_question_with_ai(response_prompt, chat_model)
         odpowiedz_ai = ai_answer["text"]
         openai_usage_history = get_current_openai_usage_history()
-        app.logger.info(
-            "ask-question: ai request ok record_id=%s model=%s answer_len=%s sources_count=%s",
-            record_id,
-            ai_answer.get("model"),
-            len(odpowiedz_ai or ""),
-            len(ai_answer.get("sources", []))
-        )
-        
-        # 5. Zapisanie aktualnego pytania oraz odpowiedzi do bazy (pamięć trwała)
+
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO chat_history (record_id, role, content) VALUES (?, ?, ?)", (record_id, 'user', question))
-        cursor.execute(
-            """
-            INSERT INTO chat_history (record_id, role, content, model_used, openai_usage_history)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                record_id,
-                'assistant',
-                odpowiedz_ai,
-                ai_answer["engine"],
-                serialize_openai_usage_history(openai_usage_history)
+        if use_project_chat:
+            cursor.execute("INSERT INTO project_chat_history (project_id, role, content) VALUES (?, ?, ?)", (project_id, 'user', question))
+            cursor.execute(
+                "INSERT INTO project_chat_history (project_id, role, content, model_used) VALUES (?, ?, ?, ?)",
+                (project_id, 'assistant', odpowiedz_ai, ai_answer["engine"])
             )
-        )
+        else:
+            cursor.execute("INSERT INTO chat_history (record_id, role, content) VALUES (?, ?, ?)", (record_id, 'user', question))
+            cursor.execute(
+                "INSERT INTO chat_history (record_id, role, content, model_used, openai_usage_history) VALUES (?, ?, ?, ?, ?)",
+                (record_id, 'assistant', odpowiedz_ai, ai_answer["engine"], serialize_openai_usage_history(openai_usage_history))
+            )
         conn.commit()
         conn.close()
-        app.logger.info("ask-question: saved chat history record_id=%s", record_id)
-        
+
         return jsonify({
             "answer": odpowiedz_ai,
             "engine": ai_answer["engine"],
@@ -2931,12 +3037,7 @@ def ask_question():
             "authenticity_score": extract_authenticity_score(odpowiedz_ai),
         })
     except Exception as e:
-        app.logger.exception(
-            "ask-question: error user=%s record_id=%s question_len=%s",
-            user_email,
-            record_id,
-            len(question)
-        )
+        app.logger.exception("ask-question: error user=%s project_id=%s record_id=%s", user_email, project_id, record_id)
         return jsonify({"error": f"Błąd AI: {str(e)}"}), 500
 
 @app.route('/delete-history/<int:item_id>', methods=['DELETE'])
@@ -2948,7 +3049,15 @@ def delete_history(item_id):
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM history WHERE id = ? AND user_email = ?", (item_id, user_email))
+    cursor.execute("SELECT project_id FROM history WHERE id = ? AND user_email = ?", (item_id, user_email))
+    row = cursor.fetchone()
+    if row:
+        pid = row[0]
+        cursor.execute("DELETE FROM history WHERE id = ? AND user_email = ?", (item_id, user_email))
+        if pid:
+            cursor.execute("SELECT COUNT(*) FROM history WHERE project_id = ?", (pid,))
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("DELETE FROM projects WHERE id = ? AND user_email = ?", (pid, user_email))
     conn.commit()
     conn.close()
     return jsonify({"success": True})
@@ -2966,10 +3075,20 @@ def delete_history_bulk():
     ids = [int(i) for i in ids if str(i).isdigit()]
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+    placeholders = ','.join('?' * len(ids))
+    cursor.execute(
+        f"SELECT DISTINCT project_id FROM history WHERE id IN ({placeholders}) AND user_email = ? AND project_id IS NOT NULL",
+        ids + [user_email]
+    )
+    affected_projects = [r[0] for r in cursor.fetchall()]
     cursor.executemany(
         "DELETE FROM history WHERE id = ? AND user_email = ?",
         [(i, user_email) for i in ids]
     )
+    for pid in affected_projects:
+        cursor.execute("SELECT COUNT(*) FROM history WHERE project_id = ?", (pid,))
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("DELETE FROM projects WHERE id = ? AND user_email = ?", (pid, user_email))
     conn.commit()
     conn.close()
     return jsonify({"success": True, "deleted": len(ids)})
@@ -3143,6 +3262,340 @@ def delete_api_key(key_id):
     conn.commit()
     conn.close()
     return jsonify({"deleted": result.rowcount > 0})
+
+
+@app.route('/api/compare-notes', methods=['POST'])
+@limiter.limit("10 per hour; 3 per minute")
+@csrf.exempt
+def compare_notes_api():
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+
+    data = request.get_json(silent=True) or {}
+    source_ids = data.get('source_ids') or []
+    model_ids  = data.get('model_ids')  or []
+    notes_mode = data.get('notes_mode', 'full')
+
+    if not isinstance(model_ids, list) or not (1 <= len(model_ids) <= 4):
+        return jsonify({"error": "Wybierz 1–4 modele"}), 400
+    if notes_mode not in {'full', 'summary', 'overview', 'bullets', 'prompt'}:
+        notes_mode = 'full'
+
+    # load source texts
+    raw_texts = []
+    if source_ids:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        for sid in source_ids[:5]:
+            try:
+                cursor.execute(
+                    "SELECT filename, raw_text FROM history WHERE id = ? AND user_email = ?",
+                    (int(sid), user_email)
+                )
+                row = cursor.fetchone()
+                if row and row[1]:
+                    raw_texts.append({"filename": row[0], "raw_text": row[1]})
+            except (ValueError, TypeError):
+                pass
+        conn.close()
+
+    if not raw_texts:
+        return jsonify({"error": "Brak wybranych źródeł z tekstem"}), 400
+
+    combined = build_project_context(raw_texts) if len(raw_texts) > 1 else raw_texts[0]['raw_text']
+
+    # resolve model objects
+    models_to_use = []
+    for mid in model_ids[:4]:
+        try:
+            m = get_ai_model_by_id(int(mid), "notes")
+            if m:
+                models_to_use.append(m)
+        except (ValueError, TypeError):
+            pass
+    if not models_to_use:
+        return jsonify({"error": "Brak dostępnych modeli"}), 400
+
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _generate(model):
+        t0 = time.time()
+        try:
+            notes, _ = generate_audio_notes(
+                combined, 'online',
+                preferred_provider=model.get('provider'),
+                model_used=None,
+                notes_mode=notes_mode,
+                notes_model_id=model.get('id')
+            )
+            return {
+                "model_id": model["id"], "display_name": model["display_name"],
+                "provider": model["provider"], "notes": notes,
+                "timing_ms": int((time.time() - t0) * 1000), "error": None
+            }
+        except Exception as exc:
+            return {
+                "model_id": model["id"], "display_name": model["display_name"],
+                "provider": model["provider"], "notes": None,
+                "timing_ms": int((time.time() - t0) * 1000), "error": str(exc)
+            }
+
+    results = []
+    with ThreadPoolExecutor(max_workers=min(4, len(models_to_use))) as pool:
+        futures = {pool.submit(_generate, m): m for m in models_to_use}
+        for f in as_completed(futures):
+            results.append(f.result())
+
+    order = {int(mid): i for i, mid in enumerate(model_ids)}
+    results.sort(key=lambda r: order.get(r['model_id'], 999))
+
+    # persist benchmark data
+    src_chars = len(combined)
+    tok_in_est = src_chars // 4
+    conn2 = sqlite3.connect(DB_FILE)
+    c2 = conn2.cursor()
+    for r in results:
+        tok_out_est = len(r.get('notes') or '') // 4
+        c2.execute(
+            "INSERT INTO compare_results "
+            "(user_email, display_name, provider, notes_mode, source_chars, tokens_in_est, tokens_out_est, timing_ms, success) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (user_email, r['display_name'], r['provider'], notes_mode,
+             src_chars, tok_in_est, tok_out_est, r['timing_ms'],
+             0 if r['error'] else 1)
+        )
+    conn2.commit()
+    conn2.close()
+
+    sources_info = [{"id": s_id, "filename": t["filename"]}
+                    for s_id, t in zip(source_ids, raw_texts)]
+
+    return jsonify({"results": results, "sources": sources_info})
+
+
+@app.route('/api/compare-reports', methods=['GET'])
+@csrf.exempt
+def compare_reports_api():
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT display_name, provider,
+               COUNT(*)                                    AS cnt,
+               SUM(success)                               AS ok,
+               ROUND(AVG(timing_ms))                      AS avg_ms,
+               ROUND(MIN(timing_ms))                      AS min_ms,
+               ROUND(MAX(timing_ms))                      AS max_ms,
+               ROUND(AVG(tokens_in_est))                  AS avg_tok_in,
+               ROUND(AVG(tokens_out_est))                 AS avg_tok_out,
+               ROUND(AVG(CASE WHEN success=1 AND timing_ms > 0
+                   THEN tokens_out_est * 1000.0 / timing_ms ELSE NULL END), 1) AS avg_tps
+        FROM compare_results
+        WHERE user_email = ?
+        GROUP BY display_name, provider
+        ORDER BY avg_ms ASC
+    """, (user_email,))
+    stats_rows = cursor.fetchall()
+    stats_keys = ['display_name', 'provider', 'count', 'successes',
+                  'avg_ms', 'min_ms', 'max_ms',
+                  'avg_tokens_in', 'avg_tokens_out', 'avg_tps']
+    stats = [dict(zip(stats_keys, r)) for r in stats_rows]
+
+    cursor.execute("""
+        SELECT id, display_name, provider, notes_mode, source_chars,
+               tokens_in_est, tokens_out_est, timing_ms, success,
+               datetime(created_at, 'localtime')
+        FROM compare_results
+        WHERE user_email = ?
+        ORDER BY created_at DESC LIMIT 100
+    """, (user_email,))
+    runs_rows = cursor.fetchall()
+    runs_keys = ['id', 'display_name', 'provider', 'notes_mode', 'source_chars',
+                 'tokens_in', 'tokens_out', 'timing_ms', 'success', 'created_at']
+    runs = [dict(zip(runs_keys, r)) for r in runs_rows]
+    for r in runs:
+        if r['timing_ms'] and r['success']:
+            r['tps'] = round(r['tokens_out'] * 1000 / r['timing_ms'], 1) if r['timing_ms'] > 0 else 0
+        else:
+            r['tps'] = None
+
+    conn.close()
+    return jsonify({"stats": stats, "runs": runs})
+
+
+@app.route('/api/compare-notes/recent-sources', methods=['GET'])
+@csrf.exempt
+def compare_recent_sources():
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, filename, datetime(created_at,'localtime') FROM history "
+        "WHERE user_email = ? AND raw_text != '' ORDER BY created_at DESC LIMIT 10",
+        (user_email,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return jsonify([{"id": r[0], "filename": r[1], "created_at": r[2]} for r in rows])
+
+
+@app.route('/api/projects', methods=['GET'])
+@csrf.exempt
+def list_projects():
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT p.id, p.name, p.created_at,
+               COUNT(h.id) AS source_count
+        FROM projects p
+        LEFT JOIN history h ON h.project_id = p.id
+        WHERE p.user_email = ?
+        GROUP BY p.id
+        ORDER BY p.created_at DESC
+        """,
+        (user_email,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return jsonify([{"id": r[0], "name": r[1], "created_at": r[2], "source_count": r[3]} for r in rows])
+
+
+@app.route('/api/projects', methods=['POST'])
+@limiter.limit("60 per hour")
+@csrf.exempt
+def create_project():
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    data = request.get_json(silent=True) or {}
+    name = str(data.get('name') or 'Nowy projekt').strip()[:200]
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO projects (user_email, name) VALUES (?, ?)", (user_email, name))
+    project_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({"id": project_id, "name": name}), 201
+
+
+@app.route('/api/projects/<int:project_id>', methods=['PATCH'])
+@csrf.exempt
+def rename_project(project_id):
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    data = request.get_json(silent=True) or {}
+    name = str(data.get('name') or '').strip()[:200]
+    if not name:
+        return jsonify({"error": "Pusty tytuł"}), 400
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE projects SET name = ? WHERE id = ? AND user_email = ?", (name, project_id, user_email))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
+
+
+@app.route('/api/projects/<int:project_id>', methods=['DELETE'])
+@csrf.exempt
+def delete_project(project_id):
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    # odepnij źródła (nie usuwa historii — tylko relację)
+    cursor.execute("UPDATE history SET project_id = NULL WHERE project_id = ? AND user_email = ?", (project_id, user_email))
+    cursor.execute("DELETE FROM projects WHERE id = ? AND user_email = ?", (project_id, user_email))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
+
+
+@app.route('/api/projects/<int:project_id>/sources', methods=['GET'])
+@csrf.exempt
+def list_project_sources(project_id):
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM projects WHERE id = ? AND user_email = ?", (project_id, user_email))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({"error": "Nie znaleziono projektu"}), 404
+    cursor.execute(
+        "SELECT id, filename, datetime(created_at,'localtime') FROM history WHERE project_id = ? ORDER BY created_at",
+        (project_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    sources_count = len(rows)
+    return jsonify({
+        "project_id": project_id,
+        "sources": [{"id": r[0], "filename": r[1], "created_at": r[2]} for r in rows],
+        "context_warning": sources_count > 5,
+    })
+
+
+@app.route('/api/projects/<int:project_id>/sources', methods=['POST'])
+@csrf.exempt
+def add_project_source(project_id):
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    data = request.get_json(silent=True) or {}
+    history_id = data.get('history_id')
+    if not history_id:
+        return jsonify({"error": "Brak history_id"}), 400
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM projects WHERE id = ? AND user_email = ?", (project_id, user_email))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({"error": "Nie znaleziono projektu"}), 404
+    cursor.execute("SELECT id FROM history WHERE id = ? AND user_email = ?", (history_id, user_email))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({"error": "Nie znaleziono nagrania"}), 404
+    cursor.execute("UPDATE history SET project_id = ? WHERE id = ? AND user_email = ?", (project_id, history_id, user_email))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
+
+
+@app.route('/api/projects/<int:project_id>/sources/<int:history_id>', methods=['DELETE'])
+@csrf.exempt
+def remove_project_source(project_id, history_id):
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM projects WHERE id = ? AND user_email = ?", (project_id, user_email))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({"error": "Nie znaleziono projektu"}), 404
+    # odepnij źródło (nie tworzy nowego projektu — historia zostaje "osierocona")
+    cursor.execute(
+        "UPDATE history SET project_id = NULL WHERE id = ? AND project_id = ? AND user_email = ?",
+        (history_id, project_id, user_email)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
 
 
 if __name__ == '__main__':

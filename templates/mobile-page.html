@@ -211,6 +211,7 @@
             </span>
         </div>
         <div class="topbar-right">
+            <button class="topbar-icon-btn" onclick="openCompare()" title="Porównaj modele" id="compare-btn" style="display:none;">⚖️</button>
             <button class="back-btn" onclick="nav('dashboard')">‹</button>
         </div>
     </div>
@@ -269,6 +270,10 @@
                 <span id="ollama-dot" style="width:7px; height:7px; border-radius:50%; background:var(--text-muted); display:inline-block; flex-shrink:0;"></span>
                 <span id="ollama-status-text">…</span>
             </span>
+            <span id="proj-context-badge" style="display:none; align-items:center; gap:3px; font-size:10px; white-space:nowrap; cursor:default;"
+                  title="Projekt wieloźródłowy">
+                📁 <span id="proj-src-count">0</span> źr.
+            </span>
         </div>
         <div class="topbar-right">
             <button class="back-btn" onclick="nav('dashboard')">‹</button>
@@ -293,6 +298,57 @@
     </div>
 </div><!-- /screen-chat -->
 
+<!-- ══════════════════════════════════════════════════════════
+     SCREEN: RAPORTY PORÓWNANIA MODELI
+═══════════════════════════════════════════════════════════ -->
+<div id="screen-reports" class="screen">
+
+    <div class="topbar">
+        <div class="topbar-left">
+            <h1>Raport modeli</h1>
+            <span style="font-size:11px;color:var(--text-muted);" id="rep-subtitle">szacowane tokeny (znaki/4)</span>
+        </div>
+        <div class="topbar-right">
+            <button class="back-btn" onclick="nav('dashboard')">‹</button>
+        </div>
+    </div>
+
+    <div class="screen-scroll" id="rep-scroll">
+
+        <!-- Summary cards per model -->
+        <div class="rep-section-lbl">Podsumowanie modeli</div>
+        <div id="rep-stats" class="rep-stats-list">
+            <div class="empty-state"><span class="spinner"></span></div>
+        </div>
+
+        <!-- Runs table -->
+        <div class="rep-section-lbl" style="margin-top:16px;">
+            Historia biegów
+            <span id="rep-run-count" style="font-size:11px;color:var(--text-muted);margin-left:6px;"></span>
+        </div>
+        <div class="rep-table-wrap">
+            <table class="rep-table" id="rep-table">
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th title="Tryb notatek">Tryb</th>
+                        <th title="Czas odpowiedzi w sekundach" class="num">Czas [s]</th>
+                        <th title="Szacowane tokeny wejściowe" class="num">Tok↓</th>
+                        <th title="Szacowane tokeny wyjściowe" class="num">Tok↑</th>
+                        <th title="Tokeny wyjściowe na sekundę" class="num">Tok/s</th>
+                        <th title="Data">Data</th>
+                    </tr>
+                </thead>
+                <tbody id="rep-tbody"></tbody>
+            </table>
+            <div id="rep-empty" style="display:none; padding:20px; text-align:center; color:var(--text-muted); font-size:13px;">
+                Brak danych. Wykonaj porównanie modeli.
+            </div>
+        </div>
+
+    </div>
+</div><!-- /screen-reports -->
+
 
 <!-- ═════════════════════════════════════════════════════════
      OVERLAY A · SOURCE BOTTOM SHEET
@@ -315,6 +371,56 @@
                 <button class="mode-pill" data-mode="prompt">Prompt AI</button>
                 <button class="mode-pill" data-mode="reel-prepare">Przygotuj rolkę</button>
                 <button class="mode-pill mode-pill--action" data-mode="auth-analysis">🔍 Analiza autentyczności</button>
+            </div>
+        </div>
+
+        <!-- MODEL SELECTION STRIP -->
+        <div class="src-model-strip">
+            <div class="src-model-row">
+                <span class="src-model-lbl">Tryb</span>
+                <div class="tog-wrap" style="gap:6px;">
+                    <span class="tog-label">Lok.</span>
+                    <label class="tog">
+                        <input type="checkbox" id="src-mode-toggle"
+                               {% if not local_models_enabled %}checked disabled{% endif %}
+                               onchange="onSrcModeChange()">
+                        <div class="tog-slider"></div>
+                    </label>
+                    <span class="tog-label" style="color:var(--blue);">Chmura</span>
+                </div>
+            </div>
+            <div class="src-model-row" id="src-row-transc">
+                <span class="src-model-lbl">Model STT</span>
+                <select id="src-cloud-model" class="f-select" style="font-size:12px; padding:5px 8px;">
+                    {% if cloud_models %}
+                        {% for m in cloud_models %}
+                            <option value="{{ m.id }}"
+                                {% if m.id == default_cloud_model_id %}selected{% endif %}>
+                                {{ m.display_name }}
+                            </option>
+                        {% endfor %}
+                    {% else %}
+                        <option value="">Brak modeli</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="src-model-row" id="src-row-notes">
+                <span class="src-model-lbl">Model notatek</span>
+                <select id="src-notes-model" class="f-select" style="font-size:12px; padding:5px 8px;">
+                    <option value="">Domyślny</option>
+                    {% for m in notes_models %}
+                        <option value="{{ m.id }}"
+                            {% if m.id == default_notes_model_id %}selected{% endif %}>
+                            {% if m.provider == 'ollama_ip' %}[Sieć] {% endif %}{{ m.display_name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="src-model-row">
+                <span class="src-model-lbl">Projekt</span>
+                <select id="src-project-sel" class="f-select" style="font-size:12px; padding:5px 8px;">
+                    <option value="">Nowy projekt (auto)</option>
+                </select>
             </div>
         </div>
 
@@ -486,7 +592,7 @@
     <div class="bsheet bsheet--tall">
         <div class="bsheet-handle"></div>
         <div class="hist-header">
-            <span class="hist-header-title" id="hist-header-title">Historia transkrypcji</span>
+            <span class="hist-header-title" id="hist-header-title">Projekty</span>
             <button class="hist-select-btn" id="hist-select-toggle" onclick="toggleHistSelectMode()">Zaznacz</button>
         </div>
         <div class="hist-list" id="hist-list">
@@ -532,6 +638,9 @@
             <a href="{{ url_for('usage_history') }}" class="nav-item">
                 <span class="nav-icon">📊</span>Zużycie tokenów
             </a>
+            <a class="nav-item" onclick="nav('reports'); closeOverlay('ov-sidebar');">
+                <span class="nav-icon">⚖️</span>Raport porównania modeli
+            </a>
             <a href="{{ url_for('change_password') }}" class="nav-item">
                 <span class="nav-icon">🔑</span>Zmiana hasła
             </a>
@@ -573,6 +682,18 @@
     const LOCAL_MODELS_ENABLED  = {{ 'true' if local_models_enabled else 'false' }};
     const DEFAULT_CHAT_LABEL    = {{ (default_chat_model_label or '')|tojson }};
     const OLLAMA_IP_CONFIGURED  = {{ 'true' if ollama_ip_configured else 'false' }};
+
+    function onSrcModeChange() {
+        const cloud = document.getElementById('src-mode-toggle').checked;
+        // sync to ov-settings toggle (without triggering its change event again)
+        const mainToggle = document.getElementById('mode-toggle');
+        if (mainToggle && !mainToggle.disabled) mainToggle.checked = cloud;
+        // update ov-settings UI (subtitle + row opacity)
+        onModeChange();
+        // show/hide cloud-only rows in ov-source strip
+        document.getElementById('src-row-transc').style.display = cloud ? '' : 'none';
+        document.getElementById('src-row-notes').style.display  = cloud ? '' : 'none';
+    }
 
     function getSelectedChatProvider() {
         const picker = document.getElementById('chat-model-picker');
@@ -621,6 +742,10 @@
        STATE
     ═══════════════════════════════════════════ */
     let activeRecordId    = null;
+    let activeProjectId   = null;
+    let activeProjectSources = 0;
+    let projNameCache     = new Map();
+    let renderedProjectEls = new Map();
     let docName           = 'Transkrypcja';
     let currentTranscription = '';
     let currentNotes         = '';
@@ -673,6 +798,7 @@
     function nav(screenId) {
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById('screen-' + screenId).classList.add('active');
+        if (screenId === 'reports') loadReports();
     }
 
     /* ═══════════════════════════════════════════
@@ -681,7 +807,7 @@
     function openOverlay(id)  { document.getElementById(id).classList.add('open'); }
     function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
 
-    function openSource()   { openOverlay('ov-source'); }
+    function openSource()   { openOverlay('ov-source'); loadProjectsForSrcSel(); }
     function openSettings() { openOverlay('ov-settings'); }
     function openSidebar()  { openOverlay('ov-sidebar'); }
 
@@ -833,6 +959,8 @@
         return {
             processing_mode: cloud ? 'online' : 'offline',
             cloud_model_id:  document.getElementById('sel-cloud-model').value,
+            notes_model_id:  document.getElementById('src-notes-model').value,
+            project_id:      document.getElementById('src-project-sel')?.value || null,
             language:        document.getElementById('sel-lang').value,
             task:            document.getElementById('sel-task').value,
             model_name:      'base'
@@ -845,6 +973,8 @@
         if (blob) fd.append('file', blob, filename);
         fd.append('processing_mode', s.processing_mode);
         fd.append('cloud_model_id',  s.cloud_model_id);
+        if (s.notes_model_id) fd.append('notes_model_id', s.notes_model_id);
+        if (s.project_id)     fd.append('project_id',     s.project_id);
         fd.append('language',        s.language);
         fd.append('task',            s.task);
         fd.append('model_name',      s.model_name);
@@ -858,6 +988,10 @@
     ═══════════════════════════════════════════ */
     function clearResults() {
         activeRecordId        = null;
+        activeProjectId       = null;
+        activeProjectSources  = 0;
+        const cmpBtn = document.getElementById('compare-btn');
+        if (cmpBtn) cmpBtn.style.display = 'none';
         currentTranscription  = '';
         currentNotes          = '';
         currentNotesAuthScore = null;
@@ -968,7 +1102,7 @@
         }
 
         document.getElementById('dash-chat-sub').textContent =
-            activeRecordId ? clamp(docName, 30) : 'Nowy czat';
+            (activeRecordId || activeProjectId) ? clamp(docName, 30) : 'Nowy czat';
 
         document.getElementById('dash-source-sub').textContent = clamp(docName, 30);
 
@@ -1095,6 +1229,8 @@
 
     function enableChat() {
         document.getElementById('chat-empty').style.display = 'none';
+        const cmpBtn = document.getElementById('compare-btn');
+        if (cmpBtn) cmpBtn.style.display = '';
         populateChatInputFromAuthenticityPrompt();
     }
 
@@ -1109,7 +1245,9 @@
         inp.style.height = 'auto';
 
         // Create a blank history record on the first message of a fresh chat
-        if (!activeRecordId) {
+        // (skip if already in a multi-source project chat — keyed by project_id)
+        const isProjectChat = activeProjectId && activeProjectSources > 1;
+        if (!activeRecordId && !isProjectChat) {
             try {
                 const r = await fetch(BASE + '/new-chat', {
                     method: 'POST',
@@ -1117,7 +1255,9 @@
                 });
                 const d = await r.json();
                 if (!d.record_id) { btn.disabled = false; return; }
-                activeRecordId = d.record_id;
+                activeRecordId   = d.record_id;
+                activeProjectId  = d.project_id || null;
+                activeProjectSources = 1;
                 docName = 'Nowy czat';
                 refreshDashCards();
             } catch {
@@ -1138,7 +1278,9 @@
             const res  = await fetch(BASE + '/ask-question', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-                body: JSON.stringify({ id: activeRecordId, question: questionForBackend, chat_model_id: chatModelId })
+                body: JSON.stringify(isProjectChat
+                    ? { project_id: activeProjectId, question: questionForBackend, chat_model_id: chatModelId }
+                    : { id: activeRecordId, question: questionForBackend, chat_model_id: chatModelId })
             });
             const data = await res.json();
             loader.remove();
@@ -1273,13 +1415,20 @@
         const list = document.getElementById('hist-list');
         if (!append) {
             histOffset = 0;
+            renderedProjectEls.clear();
             list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
         }
 
         try {
-            const res  = await fetch(`${BASE}/get-history?offset=${histOffset}`, {headers: {'X-CSRFToken': getCsrfToken()}});
-            const data = await res.json();
-            const { items, total, limit } = data;
+            const reqs = [fetch(`${BASE}/get-history?offset=${histOffset}`, {headers: {'X-CSRFToken': getCsrfToken()}})];
+            if (!append) reqs.push(fetch(`${BASE}/api/projects`, {headers: {'X-CSRFToken': getCsrfToken()}}));
+            const [histRes, projRes] = await Promise.all(reqs);
+            const { items, total } = await histRes.json();
+
+            if (projRes) {
+                projNameCache.clear();
+                (await projRes.json()).forEach(p => projNameCache.set(p.id, p.name));
+            }
 
             if (!append) {
                 list.innerHTML = '';
@@ -1287,65 +1436,37 @@
             }
 
             if (!items.length && !append) {
-                list.innerHTML = '<div class="empty-state"><span class="empty-icon">🕒</span><span class="empty-text">Brak zapisanych transkrypcji.</span></div>';
+                list.innerHTML = '<div class="empty-state"><span class="empty-icon">🕒</span><span class="empty-text">Brak zapisanych projektów.</span></div>';
                 return;
             }
 
-            items.forEach(item => {
-                const el = document.createElement('div');
-                el.className = 'hist-item';
-                if (histSelectMode && histSelectedIds.has(item.id)) el.classList.add('hist-selected');
-
-                const chatCount = Number(item.chat_count || 0);
-                const chatInfo  = chatCount > 0
-                    ? `<div class="hist-chat-count">Czat: ${chatCount} wiad.</div>`
-                    : '';
-
-                const authBarsHtml = (() => {
-                    let v = null;
-                    for (const m of (item.chat_messages || []))
-                        if (m.role === 'assistant') { const x = extractChatAuthScore(m.content); if (x != null) v = x; }
-                    return v != null ? `<div class="hist-meta" style="margin-top:2px;">${renderAuthBar(v)}</div>` : '';
-                })();
-
-                if (histSelectMode) {
-                    el.innerHTML = `
-                        <div class="hist-check">✓</div>
-                        <div class="hist-info">
-                            <div class="hist-title">
-                                <div class="hist-meta-data">${esc(item.created_at).slice(0, 16)}</div>
-                                ${esc(item.filename)}
-                            </div>
-                            <div class="hist-meta">${renderAuthBar(item.authenticity_score ?? null)}</div>
-                            ${authBarsHtml}
-                            ${chatInfo}
-                            ${renderTokenSummary(item.token_summary)}
-                        </div>
-                    `;
-                    el.addEventListener('click', () => toggleHistSelect(item.id, el));
-                } else {
-                    el.innerHTML = `
-                        <div class="hist-info">
-                            <div class="hist-title">
-                                <div class="hist-meta-data">${esc(item.created_at).slice(0, 16)}</div>
-                                ${esc(item.filename)}
-                            </div>
-                            <div class="hist-meta">${renderAuthBar(item.authenticity_score ?? null)}</div>
-                            ${authBarsHtml}
-                            ${chatInfo}
-                            ${renderTokenSummary(item.token_summary)}
-                        </div>
-                        <button class="hist-rename-btn" aria-label="Zmień nazwę">✏️</button>
-                        <button class="hist-del" aria-label="Usuń">🗑️</button>
-                    `;
-                    const hi = el.querySelector('.hist-info');
-                    hi.addEventListener('click', () => loadHistItem(item));
-                    addLongPress(hi, () => { loadHistItem(item); closeOverlay('ov-history'); });
-                    el.querySelector('.hist-rename-btn').addEventListener('click', (e) => { e.stopPropagation(); renameHistItem(item, el); });
-                    el.querySelector('.hist-del').addEventListener('click', (e) => delHistItem(item.id, e));
-                }
-                list.appendChild(el);
-            });
+            if (histSelectMode) {
+                // flat mode for multi-select
+                items.forEach(item => _renderFlatHistItem(list, item));
+            } else {
+                // group by project_id
+                const order = [];
+                const groups = new Map();
+                items.forEach(item => {
+                    const pid = item.project_id;
+                    if (pid && renderedProjectEls.has(pid)) {
+                        _addSrcToProjectCard(renderedProjectEls.get(pid), item);
+                        return;
+                    }
+                    if (!groups.has(pid)) { order.push(pid); groups.set(pid, []); }
+                    groups.get(pid).push(item);
+                });
+                order.forEach(pid => {
+                    const pItems = groups.get(pid);
+                    const pName  = (pid && projNameCache.get(pid)) || pItems[0].filename;
+                    if (pItems.length === 1) {
+                        _renderSingleSrcProject(list, pItems[0], pName, pid);
+                    } else {
+                        const el = _renderMultiSrcProject(list, pid, pName, pItems);
+                        if (pid) renderedProjectEls.set(pid, el);
+                    }
+                });
+            }
 
             document.getElementById('hist-load-more')?.remove();
             histOffset += items.length;
@@ -1358,8 +1479,128 @@
                 list.appendChild(moreBtn);
             }
         } catch {
-            list.innerHTML = '<div class="empty-state"><span class="empty-text" style="color:var(--red);">Błąd ładowania historii.</span></div>';
+            list.innerHTML = '<div class="empty-state"><span class="empty-text" style="color:var(--red);">Błąd ładowania projektów.</span></div>';
         }
+    }
+
+    function _itemMeta(item) {
+        const chatCount = Number(item.chat_count || 0);
+        const chatInfo  = chatCount > 0 ? `<div class="hist-chat-count">Czat: ${chatCount} wiad.</div>` : '';
+        let authV = null;
+        for (const m of (item.chat_messages || []))
+            if (m.role === 'assistant') { const x = extractChatAuthScore(m.content); if (x != null) authV = x; }
+        const authHtml = authV != null ? `<div class="hist-meta" style="margin-top:2px;">${renderAuthBar(authV)}</div>` : '';
+        return { chatInfo, authHtml };
+    }
+
+    function _renderFlatHistItem(list, item) {
+        const el = document.createElement('div');
+        el.className = 'hist-item';
+        if (histSelectedIds.has(item.id)) el.classList.add('hist-selected');
+        const { chatInfo, authHtml } = _itemMeta(item);
+        el.innerHTML = `
+            <div class="hist-check">✓</div>
+            <div class="hist-info">
+                <div class="hist-title">
+                    <div class="hist-meta-data">${esc(item.created_at).slice(0, 16)}</div>
+                    ${esc(item.filename)}
+                </div>
+                <div class="hist-meta">${renderAuthBar(item.authenticity_score ?? null)}</div>
+                ${authHtml}${chatInfo}${renderTokenSummary(item.token_summary)}
+            </div>`;
+        el.addEventListener('click', () => toggleHistSelect(item.id, el));
+        list.appendChild(el);
+    }
+
+    function _renderSingleSrcProject(list, item, pName, pid) {
+        const el = document.createElement('div');
+        el.className = 'hist-item';
+        const { chatInfo, authHtml } = _itemMeta(item);
+        el.innerHTML = `
+            <div class="hist-info">
+                <div class="hist-title">
+                    <div class="hist-meta-data">${esc(item.created_at).slice(0, 16)}</div>
+                    ${esc(pName)}
+                </div>
+                <div class="hist-meta">${renderAuthBar(item.authenticity_score ?? null)}</div>
+                ${authHtml}${chatInfo}${renderTokenSummary(item.token_summary)}
+            </div>
+            <button class="hist-assign-btn" aria-label="Dodaj do projektu" title="Dodaj do projektu">🔗</button>
+            <button class="hist-rename-btn" aria-label="Zmień nazwę">✏️</button>
+            <button class="hist-del" aria-label="Usuń">🗑️</button>`;
+        const hi = el.querySelector('.hist-info');
+        hi.addEventListener('click', () => loadHistItem(item));
+        addLongPress(hi, () => { loadHistItem(item); closeOverlay('ov-history'); });
+        el.querySelector('.hist-assign-btn').addEventListener('click', (e) => { e.stopPropagation(); showAssignProjectModal(item); });
+        el.querySelector('.hist-rename-btn').addEventListener('click', (e) => { e.stopPropagation(); renameHistItem(item, el, pid); });
+        el.querySelector('.hist-del').addEventListener('click', (e) => delHistItem(item.id, e));
+        list.appendChild(el);
+    }
+
+    function _renderMultiSrcProject(list, pid, pName, sources) {
+        const el = document.createElement('div');
+        el.className = 'hist-item hist-item--proj';
+        const n = sources.length;
+        const warnCls = n > 5 ? ' hist-proj-cnt--warn' : '';
+        const srcHtml = sources.map(s => `
+            <div class="hist-src-item" data-id="${s.id}">
+                <span class="hist-src-name">${esc(s.filename)}</span>
+                <span class="hist-meta-data">${esc(s.created_at).slice(0, 16)}</span>
+                <button class="hist-src-detach" aria-label="Odepnij" title="Odepnij od projektu">✕</button>
+            </div>`).join('');
+        el.innerHTML = `
+            <div class="hist-proj-hdr">
+                <div class="hist-info">
+                    <div class="hist-title">
+                        <div class="hist-meta-data">${esc(sources[0].created_at).slice(0,16)}</div>
+                        <span class="hist-proj-icon">📁</span> ${esc(pName)}
+                        <span class="hist-proj-cnt${warnCls}">${n} źr.</span>
+                    </div>
+                </div>
+                <button class="hist-proj-toggle" aria-label="Rozwiń/zwiń">▾</button>
+                <button class="hist-del" aria-label="Usuń projekt">🗑️</button>
+            </div>
+            <div class="hist-proj-srcs" hidden>
+                ${srcHtml}
+                <button class="hist-proj-chat-btn">Chat z całym projektem →</button>
+            </div>`;
+        const srcsEl = el.querySelector('.hist-proj-srcs');
+        el.querySelector('.hist-proj-toggle').addEventListener('click', (e) => {
+            e.stopPropagation();
+            srcsEl.hidden = !srcsEl.hidden;
+            e.currentTarget.textContent = srcsEl.hidden ? '▾' : '▴';
+        });
+        el.querySelector('.hist-info').addEventListener('click', () => openProjectAsChat(pid, pName, sources));
+        addLongPress(el.querySelector('.hist-info'), () => { openProjectAsChat(pid, pName, sources); closeOverlay('ov-history'); });
+        srcsEl.querySelectorAll('.hist-src-item').forEach((srcEl, i) => {
+            srcEl.addEventListener('click', (e) => {
+                if (e.target.classList.contains('hist-src-detach')) return;
+                loadHistItem(sources[i]); closeOverlay('ov-history');
+            });
+            srcEl.querySelector('.hist-src-detach').addEventListener('click', (e) => {
+                e.stopPropagation();
+                removeSourceFromProject(pid, sources[i].id, srcEl, el);
+            });
+        });
+        el.querySelector('.hist-proj-chat-btn').addEventListener('click', () => { openProjectAsChat(pid, pName, sources); closeOverlay('ov-history'); });
+        el.querySelector('.hist-del').addEventListener('click', (e) => delProject(pid, e));
+        list.appendChild(el);
+        return el;
+    }
+
+    function _addSrcToProjectCard(el, item) {
+        const srcsEl = el.querySelector('.hist-proj-srcs');
+        if (!srcsEl) return;
+        const chatBtn = srcsEl.querySelector('.hist-proj-chat-btn');
+        const srcEl = document.createElement('div');
+        srcEl.className = 'hist-src-item';
+        srcEl.dataset.id = item.id;
+        srcEl.innerHTML = `<span class="hist-src-name">${esc(item.filename)}</span><span class="hist-meta-data">${esc(item.created_at).slice(0,16)}</span>`;
+        srcEl.addEventListener('click', () => { loadHistItem(item); closeOverlay('ov-history'); });
+        srcsEl.insertBefore(srcEl, chatBtn);
+        const n = srcsEl.querySelectorAll('.hist-src-item').length;
+        const cntEl = el.querySelector('.hist-proj-cnt');
+        if (cntEl) { cntEl.textContent = `${n} źr.`; cntEl.classList.toggle('hist-proj-cnt--warn', n > 5); }
     }
 
     function loadHistItem(item) {
@@ -1367,6 +1608,9 @@
         currentNotes         = item.ai_notes  || '';
         docName              = item.filename  || 'Transkrypcja';
         activeRecordId       = item.id;
+        activeProjectId      = item.project_id || null;
+        activeProjectSources = 1;
+        updateProjContextBadge();
         currentNotesAuthScore = item.authenticity_score ?? null;
         currentChatAuthScore  = (() => {
             let s = null;
@@ -1390,6 +1634,291 @@
         }
 
         showToast('Wczytano: ' + item.filename.slice(0, 28));
+    }
+
+    function updateProjContextBadge() {
+        const badge = document.getElementById('proj-context-badge');
+        if (!badge) return;
+        const n = activeProjectSources;
+        if (n <= 1) { badge.style.display = 'none'; return; }
+        document.getElementById('proj-src-count').textContent = n;
+        badge.style.display = 'inline-flex';
+        badge.style.color   = n > 5 ? 'var(--amber)' : 'var(--text-muted)';
+        badge.title = n > 5
+            ? `Duży kontekst (${n} źródeł) — może spowolnić model`
+            : `Projekt: ${n} źródeł`;
+    }
+
+    function openProjectAsChat(pid, pName, sources) {
+        activeProjectId      = pid;
+        activeProjectSources = sources.length;
+        activeRecordId       = null;
+        currentTranscription = '';
+        currentNotes         = '';
+        docName              = `📁 ${pName}`;
+        chatMessages         = [];
+        currentNotesAuthScore = null;
+        currentChatAuthScore  = null;
+        const feed = document.getElementById('chat-feed');
+        const emptyEl = document.getElementById('chat-empty');
+        [...feed.children].forEach(el => { if (el !== emptyEl) el.remove(); });
+        if (emptyEl) emptyEl.style.display = '';
+        updateProjContextBadge();
+        refreshDashCards();
+        enableChat();
+        nav('chat');
+    }
+
+    /* ═══════════════════════════════════════════
+       REPORTS SCREEN
+    ═══════════════════════════════════════════ */
+
+    let _repLoaded = false;
+
+    async function loadReports() {
+        if (_repLoaded) return;
+        const statsEl = document.getElementById('rep-stats');
+        const tbodyEl = document.getElementById('rep-tbody');
+        const emptyEl = document.getElementById('rep-empty');
+        statsEl.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
+        tbodyEl.innerHTML = '';
+        try {
+            const res  = await fetch(`${BASE}/api/compare-reports`, {headers: {'X-CSRFToken': getCsrfToken()}});
+            const data = await res.json();
+
+            // summary cards
+            statsEl.innerHTML = '';
+            if (!data.stats.length) {
+                statsEl.innerHTML = '<div style="padding:14px;color:var(--text-muted);font-size:13px;">Brak danych. Wykonaj porównanie.</div>';
+            } else {
+                data.stats.forEach(s => {
+                    const card = document.createElement('div');
+                    card.className = 'rep-stat-card';
+                    const successPct = s.count ? Math.round(s.successes / s.count * 100) : 0;
+                    const tpsVal = s.avg_tps != null ? `${s.avg_tps} tok/s` : '—';
+                    card.innerHTML = `
+                        <div class="rep-stat-name">${esc(s.display_name)}</div>
+                        <div class="rep-stat-provider">${esc(s.provider)}</div>
+                        <div class="rep-stat-grid">
+                            <div class="rep-stat-kv"><span class="rep-kv-val">${(s.avg_ms/1000).toFixed(1)}s</span><span class="rep-kv-lbl">śr. czas</span></div>
+                            <div class="rep-stat-kv"><span class="rep-kv-val">${(s.min_ms/1000).toFixed(1)}–${(s.max_ms/1000).toFixed(1)}s</span><span class="rep-kv-lbl">min–max</span></div>
+                            <div class="rep-stat-kv"><span class="rep-kv-val">${s.avg_tokens_in}</span><span class="rep-kv-lbl">śr. tok↓</span></div>
+                            <div class="rep-stat-kv"><span class="rep-kv-val">${s.avg_tokens_out}</span><span class="rep-kv-lbl">śr. tok↑</span></div>
+                            <div class="rep-stat-kv"><span class="rep-kv-val">${tpsVal}</span><span class="rep-kv-lbl">tok/s</span></div>
+                            <div class="rep-stat-kv"><span class="rep-kv-val" style="color:${successPct===100?'var(--green)':'var(--amber)'};">${successPct}%</span><span class="rep-kv-lbl">${s.count} biegów</span></div>
+                        </div>`;
+                    statsEl.appendChild(card);
+                });
+            }
+
+            // runs table
+            document.getElementById('rep-run-count').textContent = data.runs.length ? `(${data.runs.length})` : '';
+            if (!data.runs.length) {
+                emptyEl.style.display = '';
+            } else {
+                emptyEl.style.display = 'none';
+                data.runs.forEach(r => {
+                    const tr = document.createElement('tr');
+                    tr.className = r.success ? '' : 'rep-row--err';
+                    const timeSec = (r.timing_ms / 1000).toFixed(2);
+                    const tps = r.tps != null ? r.tps : '—';
+                    const dt  = r.created_at ? r.created_at.slice(5, 16) : '';
+                    tr.innerHTML = `
+                        <td class="rep-td-model" title="${esc(r.display_name)}">${esc(r.display_name.slice(0,18))}</td>
+                        <td>${esc(r.notes_mode)}</td>
+                        <td class="num ${r.timing_ms < 3000 ? 'rep-fast' : r.timing_ms > 10000 ? 'rep-slow' : ''}">${timeSec}</td>
+                        <td class="num">${r.tokens_in}</td>
+                        <td class="num">${r.tokens_out}</td>
+                        <td class="num">${tps}</td>
+                        <td class="rep-td-dt">${dt}</td>`;
+                    tbodyEl.appendChild(tr);
+                });
+            }
+            _repLoaded = true;
+        } catch (err) {
+            statsEl.innerHTML = `<div style="padding:14px;color:var(--red);font-size:13px;">Błąd: ${esc(String(err))}</div>`;
+        }
+    }
+
+    /* ═══════════════════════════════════════════
+       COMPARE MODELS
+    ═══════════════════════════════════════════ */
+
+    async function openCompare() {
+        openOverlay('ov-compare');
+        document.getElementById('cmp-results').innerHTML = '';
+        await loadCompareSources();
+    }
+
+    async function loadCompareSources() {
+        const listEl = document.getElementById('cmp-source-list');
+        listEl.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
+        try {
+            const res = await fetch(`${BASE}/api/compare-notes/recent-sources`, {headers: {'X-CSRFToken': getCsrfToken()}});
+            const sources = await res.json();
+            listEl.innerHTML = '';
+            sources.forEach(s => {
+                const label = document.createElement('label');
+                label.className = 'cmp-source-chk';
+                const checked = s.id === activeRecordId ? 'checked' : '';
+                label.innerHTML = `
+                    <input type="checkbox" class="cmp-source-input" value="${s.id}" ${checked}>
+                    <span class="cmp-source-name">${esc(s.filename)}</span>
+                    <span class="hist-meta-data">${esc(s.created_at).slice(0,16)}</span>`;
+                listEl.appendChild(label);
+            });
+            if (!listEl.children.length)
+                listEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;">Brak zapisanych źródeł.</div>';
+        } catch {
+            listEl.innerHTML = '<div style="padding:12px;color:var(--red);font-size:13px;">Błąd ładowania.</div>';
+        }
+    }
+
+    async function runComparison() {
+        const sourceIds  = [...document.querySelectorAll('.cmp-source-input:checked')].map(el => Number(el.value));
+        const modelIds   = [...document.querySelectorAll('.cmp-model-input:checked')].map(el => Number(el.value));
+        const notesMode  = document.getElementById('cmp-notes-mode').value;
+        const resultsEl  = document.getElementById('cmp-results');
+
+        if (!sourceIds.length) { showToast('Zaznacz co najmniej jedno źródło'); return; }
+        if (!modelIds.length)  { showToast('Zaznacz co najmniej jeden model'); return; }
+        if (modelIds.length > 4) { showToast('Maksymalnie 4 modele'); return; }
+
+        const btn = document.getElementById('cmp-run-btn');
+        btn.disabled = true;
+        btn.textContent = 'Generowanie…';
+
+        // skeleton cards
+        resultsEl.innerHTML = modelIds.map((_, i) => `
+            <div class="cmp-card cmp-card--loading" id="cmp-card-${i}">
+                <div class="cmp-card-header"><span class="spinner"></span> Generowanie…</div>
+                <div class="cmp-card-body" style="height:60px;"></div>
+            </div>`).join('');
+
+        try {
+            const res  = await fetch(`${BASE}/api/compare-notes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({ source_ids: sourceIds, model_ids: modelIds, notes_mode: notesMode })
+            });
+            const data = await res.json();
+            if (data.error) { resultsEl.innerHTML = `<div style="padding:16px;color:var(--red);">${esc(data.error)}</div>`; return; }
+
+            resultsEl.innerHTML = '';
+            data.results.forEach(r => {
+                const card = document.createElement('div');
+                card.className = 'cmp-card' + (r.error ? ' cmp-card--error' : '');
+                const timing = r.timing_ms ? `${(r.timing_ms/1000).toFixed(1)}s` : '';
+                const srcNames = data.sources.map(s => s.filename).join(', ');
+                card.innerHTML = `
+                    <div class="cmp-card-header">
+                        <span class="cmp-card-model">${esc(r.display_name)}</span>
+                        <span class="cmp-card-timing">${timing}</span>
+                        <button class="cmp-copy-btn" title="Kopiuj">📋</button>
+                    </div>
+                    <div class="cmp-card-src">Źródła: ${esc(srcNames.slice(0, 60))}</div>
+                    <div class="cmp-card-body">${r.error
+                        ? `<span style="color:var(--red)">Błąd: ${esc(r.error)}</span>`
+                        : esc(r.notes || '').replace(/\n/g, '<br>')
+                    }</div>`;
+                card.querySelector('.cmp-copy-btn').addEventListener('click', () => {
+                    navigator.clipboard?.writeText(r.notes || r.error || '').then(() => showToast('Skopiowano'));
+                });
+                resultsEl.appendChild(card);
+            });
+        } catch (err) {
+            resultsEl.innerHTML = `<div style="padding:16px;color:var(--red);">Błąd połączenia: ${esc(String(err))}</div>`;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Generuj porównanie';
+        }
+    }
+
+    async function loadProjectsForSrcSel() {
+        const sel = document.getElementById('src-project-sel');
+        if (!sel) return;
+        try {
+            const res = await fetch(`${BASE}/api/projects`, {headers: {'X-CSRFToken': getCsrfToken()}});
+            const projects = await res.json();
+            sel.innerHTML = '<option value="">Nowy projekt (auto)</option>';
+            projects.slice(0, 30).forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = `📁 ${p.name}`;
+                sel.appendChild(opt);
+            });
+        } catch { /* keep default */ }
+    }
+
+    let _assignTargetItem = null;
+
+    async function showAssignProjectModal(item) {
+        _assignTargetItem = item;
+        const listEl = document.getElementById('modal-proj-list');
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;"><span class="spinner"></span></div>';
+        document.getElementById('modal-assign-proj').style.display = 'flex';
+        try {
+            const res = await fetch(`${BASE}/api/projects`, {headers: {'X-CSRFToken': getCsrfToken()}});
+            const projects = await res.json();
+            listEl.innerHTML = '';
+            projects.filter(p => p.id !== item.project_id).forEach(p => {
+                const el = document.createElement('div');
+                el.className = 'modal-proj-item';
+                el.textContent = `📁 ${p.name} (${p.source_count} źr.)`;
+                el.addEventListener('click', () => assignToProject(p.id, p.name));
+                listEl.appendChild(el);
+            });
+            if (!listEl.children.length)
+                listEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;">Brak innych projektów.</div>';
+        } catch {
+            listEl.innerHTML = '<div style="padding:12px;color:var(--red);font-size:13px;">Błąd ładowania.</div>';
+        }
+    }
+
+    async function assignToProject(pid, pName) {
+        const item = _assignTargetItem;
+        if (!item) return;
+        closeAssignModal();
+        const res = await fetch(`${BASE}/api/projects/${pid}/sources`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ history_id: item.id })
+        });
+        if (res.ok) { showToast(`Przeniesiono do: ${pName.slice(0, 28)}`); loadHistory(); }
+    }
+
+    function closeAssignModal() {
+        document.getElementById('modal-assign-proj').style.display = 'none';
+        _assignTargetItem = null;
+    }
+
+    async function removeSourceFromProject(pid, histId, srcEl, projectCard) {
+        if (!confirm('Odepnąć to źródło od projektu?')) return;
+        const res = await fetch(`${BASE}/api/projects/${pid}/sources/${histId}`, {
+            method: 'DELETE', headers: {'X-CSRFToken': getCsrfToken()}
+        });
+        if (!res.ok) return;
+        srcEl.remove();
+        const remaining = projectCard.querySelectorAll('.hist-src-item').length;
+        const cntEl = projectCard.querySelector('.hist-proj-cnt');
+        if (cntEl) { cntEl.textContent = `${remaining} źr.`; cntEl.classList.toggle('hist-proj-cnt--warn', remaining > 5); }
+        if (activeProjectId === pid) { activeProjectSources = remaining; updateProjContextBadge(); }
+        if (remaining === 0) loadHistory();
+    }
+
+    async function delProject(pid, event) {
+        event.stopPropagation();
+        if (!confirm('Usunąć projekt? Notatki pozostają, ale projekt zostanie rozwiązany.')) return;
+        const res = await fetch(`${BASE}/api/projects/${pid}`, {
+            method: 'DELETE', headers: {'X-CSRFToken': getCsrfToken()}
+        });
+        if (res.ok) {
+            if (activeProjectId === pid) {
+                activeProjectId = null; activeProjectSources = 0;
+                updateProjContextBadge(); refreshDashCards();
+            }
+            loadHistory();
+        }
     }
 
     function toggleNotePanel() {
@@ -1426,31 +1955,36 @@
         const res = await fetch(`${BASE}/delete-history/${id}`, { method: 'DELETE', headers: {'X-CSRFToken': getCsrfToken()} });
         if (res.ok) {
             if (activeRecordId === id) {
-                activeRecordId = null;
-                refreshDashCards();
+                activeRecordId = null; activeProjectId = null; activeProjectSources = 0;
+                updateProjContextBadge(); refreshDashCards();
             }
             loadHistory();
         }
     }
 
-    async function renameHistItem(item, el) {
+    async function renameHistItem(item, el, pid) {
         const newName = prompt('Nowy tytuł:', item.filename);
         if (!newName || newName.trim() === item.filename) return;
-        const res = await fetch(`${BASE}/history/${item.id}/rename`, {
+        const trimmed = newName.trim();
+        const reqs = [fetch(`${BASE}/history/${item.id}/rename`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-            body: JSON.stringify({ name: newName.trim() })
-        });
+            body: JSON.stringify({ name: trimmed })
+        })];
+        if (pid) reqs.push(fetch(`${BASE}/api/projects/${pid}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ name: trimmed })
+        }));
+        const [res] = await Promise.all(reqs);
         if (res.ok) {
-            item.filename = newName.trim();
+            item.filename = trimmed;
+            if (pid) projNameCache.set(pid, trimmed);
             const titleEl = el.querySelector('.hist-title');
             if (titleEl) {
-                titleEl.innerHTML = `<div class="hist-meta-data">${esc(item.created_at).slice(0, 16)}</div>${esc(item.filename)}`;
+                titleEl.innerHTML = `<div class="hist-meta-data">${esc(item.created_at).slice(0, 16)}</div>${esc(trimmed)}`;
             }
-            if (activeRecordId === item.id) {
-                docName = newName.trim();
-                refreshDashCards();
-            }
+            if (activeRecordId === item.id) { docName = trimmed; refreshDashCards(); }
         }
     }
 
@@ -1607,7 +2141,90 @@
         }
 
         updateOllamaStatusBadge();
+
+        // sync src-cloud-model ↔ sel-cloud-model
+        const srcCloudModel = document.getElementById('src-cloud-model');
+        const selCloudModel = document.getElementById('sel-cloud-model');
+        if (srcCloudModel && selCloudModel) {
+            srcCloudModel.addEventListener('change', () => { selCloudModel.value = srcCloudModel.value; });
+            selCloudModel.addEventListener('change', () => { srcCloudModel.value = selCloudModel.value; });
+        }
+
+        // sync src-mode-toggle ↔ mode-toggle
+        const srcModeToggle  = document.getElementById('src-mode-toggle');
+        const mainModeToggle = document.getElementById('mode-toggle');
+        if (srcModeToggle && mainModeToggle) {
+            // ov-settings → ov-source strip
+            mainModeToggle.addEventListener('change', () => {
+                if (!srcModeToggle.disabled) srcModeToggle.checked = mainModeToggle.checked;
+                // update strip visibility (onModeChange already called via onchange attr)
+                const c = mainModeToggle.checked;
+                document.getElementById('src-row-transc').style.display = c ? '' : 'none';
+                document.getElementById('src-row-notes').style.display  = c ? '' : 'none';
+            });
+        }
+
+        // init visibility of strip rows
+        onSrcModeChange();
     });
 </script>
+<!-- ═══════════════════════════════════════════════════════
+     OVERLAY: PORÓWNAJ MODELE
+════════════════════════════════════════════════════════ -->
+<div id="ov-compare" class="overlay">
+    <div class="backdrop" onclick="closeOverlay('ov-compare')"></div>
+    <div class="bsheet bsheet--tall">
+        <div class="bsheet-handle"></div>
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:0 16px 10px;">
+            <span class="bsheet-title" style="margin:0;">⚖️ Porównanie modeli</span>
+            <button class="back-btn" onclick="closeOverlay('ov-compare')">✕</button>
+        </div>
+
+        <!-- Źródła -->
+        <div class="cmp-section-lbl">Źródła</div>
+        <div id="cmp-source-list" class="cmp-source-list">
+            <div class="empty-state"><span class="spinner"></span></div>
+        </div>
+
+        <!-- Modele -->
+        <div class="cmp-section-lbl">Modele notatek <span style="font-size:10px;color:var(--text-muted);">(max 4)</span></div>
+        <div class="cmp-model-list">
+            {% for m in notes_models %}
+            <label class="cmp-model-chk">
+                <input type="checkbox" class="cmp-model-input" value="{{ m.id }}"
+                       data-name="{{ m.display_name }}" data-provider="{{ m.provider }}">
+                <span>{% if m.provider == 'ollama_ip' %}[Sieć] {% endif %}{{ m.display_name }}</span>
+            </label>
+            {% endfor %}
+        </div>
+
+        <!-- Tryb notatek -->
+        <div style="display:flex; align-items:center; gap:10px; padding:8px 16px 4px;">
+            <span style="font-size:12px; color:var(--text-muted); white-space:nowrap;">Tryb notatek:</span>
+            <select id="cmp-notes-mode" class="f-select" style="font-size:12px; padding:5px 8px;">
+                <option value="full">Pełne notatki</option>
+                <option value="summary">Streszczenie</option>
+                <option value="bullets">Lista punktów</option>
+                <option value="overview">Omówienie</option>
+            </select>
+        </div>
+
+        <div style="padding:10px 16px 6px;">
+            <button id="cmp-run-btn" class="cmp-run-btn" onclick="runComparison()">Generuj porównanie</button>
+        </div>
+
+        <!-- Wyniki -->
+        <div id="cmp-results" class="cmp-results"></div>
+    </div>
+</div>
+
+<!-- ── Modal: Dodaj do projektu ── -->
+<div id="modal-assign-proj" class="modal-overlay" style="display:none;" onclick="closeAssignModal()">
+    <div class="modal-box" onclick="event.stopPropagation()">
+        <div class="modal-title">Dodaj do projektu</div>
+        <div id="modal-proj-list" class="modal-proj-list"></div>
+        <button class="modal-cancel-btn" onclick="closeAssignModal()">Anuluj</button>
+    </div>
+</div>
 </body>
 </html>

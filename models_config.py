@@ -58,6 +58,11 @@ def _build_model_catalog():
             "chat": [
                 {"id": openai_web_search_model, "label": f"{openai_web_search_model} (z .env)"},
                 {"id": "gpt-5.5", "label": "GPT-5.5 - drogi model"},
+                {"id": openai_model, "label": f"{openai_model} (z .env)"},
+                {"id": "gpt-4o-mini", "label": "GPT-4o mini"},
+                {"id": "gpt-4o", "label": "GPT-4o"},
+                {"id": "gpt-4.1-mini", "label": "GPT-4.1 mini"},
+                {"id": "gpt-4.1", "label": "GPT-4.1"}
             ],
             "notes": [
                 {"id": openai_model, "label": f"{openai_model} (z .env)"},
