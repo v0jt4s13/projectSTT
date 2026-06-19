@@ -607,57 +607,7 @@
 </div>
 
 
-<!-- ═════════════════════════════════════════════════════════
-     OVERLAY D · SIDEBAR DRAWER
-     Spec: 05_sidebar_menu.md – Component 1
-════════════════════════════════════════════════════════════ -->
-<div id="ov-sidebar" class="overlay overlay--right">
-    <div class="backdrop" onclick="closeOverlay('ov-sidebar')"></div>
-    <div class="sidebar">
-
-        <!-- Profile section (Spec 05) -->
-        <div class="sidebar-profile">
-            <div class="sidebar-avatar">👤</div>
-            <div>
-                <div class="sidebar-name">{{ user.first_name }} {{ user.last_name }}</div>
-                <div class="sidebar-email">{{ user.email }}</div>
-            </div>
-        </div>
-
-        <!-- Navigation links (Spec 05) -->
-        <nav class="sidebar-nav">
-            <a href="{{ url_for('index_page') }}" class="nav-item active">
-                <span class="nav-icon">🏠</span>Panel
-            </a>
-            <a class="nav-item" onclick="openHistory(); closeOverlay('ov-sidebar');">
-                <span class="nav-icon">🕒</span>Historia transkrypcji
-            </a>
-            <a href="{{ url_for('settings') }}" class="nav-item">
-                <span class="nav-icon">⚙️</span>Ustawienia systemowe
-            </a>
-            <a href="{{ url_for('usage_history') }}" class="nav-item">
-                <span class="nav-icon">📊</span>Zużycie tokenów
-            </a>
-            <a class="nav-item" onclick="nav('reports'); closeOverlay('ov-sidebar');">
-                <span class="nav-icon">⚖️</span>Raport porównania modeli
-            </a>
-            <a href="{{ url_for('change_password') }}" class="nav-item">
-                <span class="nav-icon">🔑</span>Zmiana hasła
-            </a>
-            <a class="nav-item" onclick="nav('chat'); closeOverlay('ov-sidebar');">
-                <span class="nav-icon">🤖</span>Czat z AI
-            </a>
-        </nav>
-
-        <!-- Footer: Logout (Spec 05) -->
-        <div class="sidebar-footer">
-            <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button>
-            <a href="{{ url_for('logout') }}" class="logout-btn">
-                <span>↩</span> Wyloguj się
-            </a>
-        </div>
-    </div>
-</div>
+{% include 'menu-nav.html' %}
 
 
 <!-- Toast -->
@@ -1058,11 +1008,11 @@
                 showToast('✓ Przetworzono pomyślnie');
             } else {
                 setProcessing(false);
-                showToast('Błąd: ' + (data.error || 'Nieznany błąd'));
+                showToast('Błąd: ' + (data.error || 'Nieznany błąd'), 'error');
             }
         } catch {
             setProcessing(false);
-            showToast('Błąd połączenia z serwerem');
+            showToast('Błąd połączenia z serwerem', 'error');
         }
     }
 
@@ -2073,11 +2023,24 @@
     /* ═══════════════════════════════════════════
        UTILITIES
     ═══════════════════════════════════════════ */
-    function showToast(msg) {
+    function showToast(msg, level) {
+        const isErr = level === 'error';
         const t = document.getElementById('toast');
-        t.textContent = msg;
-        t.classList.add('show');
-        setTimeout(() => t.classList.remove('show'), 2600);
+        if (isErr) {
+            t.innerHTML = `<span>${esc(msg)}</span><a href="/logs" class="toast-logs-link">→ Logi</a>`;
+            t.className = 'show toast--error';
+            // also report to backend log
+            fetch(`${BASE}/api/client-log`, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json','X-CSRFToken': getCsrfToken()},
+                body: JSON.stringify({message: msg, category: 'frontend'})
+            }).catch(() => {});
+        } else {
+            t.textContent = msg;
+            t.className = 'show' + (level === 'success' ? ' toast--success' : '');
+        }
+        clearTimeout(t._tid);
+        t._tid = setTimeout(() => { t.className = ''; t.innerHTML = ''; }, isErr ? 8000 : 2800);
     }
 
     function esc(s) {

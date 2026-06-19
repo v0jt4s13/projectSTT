@@ -1,0 +1,54 @@
+<!-- ═════════════════════════════════════════════════════════
+     OVERLAY D · SIDEBAR DRAWER
+     Spec: 05_sidebar_menu.md – Component 1
+════════════════════════════════════════════════════════════ -->
+<div id="ov-sidebar" class="overlay overlay--right">
+    <div class="backdrop" onclick="closeOverlay('ov-sidebar')"></div>
+    <div class="sidebar">
+
+        <!-- Profile section (Spec 05) -->
+        <div class="sidebar-profile">
+            <div class="sidebar-avatar">👤</div>
+            <div>
+                <div class="sidebar-name">{{ user.first_name }} {{ user.last_name }}</div>
+                <div class="sidebar-email">{{ user.email }}</div>
+            </div>
+        </div>
+
+        <!-- Navigation links (Spec 05) -->
+        <nav class="sidebar-nav">
+            <a href="{{ url_for('index_page') }}" class="nav-item active">
+                <span class="nav-icon">🏠</span>Panel
+            </a>
+            <a class="nav-item" onclick="openHistory(); closeOverlay('ov-sidebar');">
+                <span class="nav-icon">🕒</span>Historia transkrypcji
+            </a>
+            <a href="{{ url_for('settings') }}" class="nav-item">
+                <span class="nav-icon">⚙️</span>Ustawienia systemowe
+            </a>
+            <a href="{{ url_for('usage_history') }}" class="nav-item">
+                <span class="nav-icon">📊</span>Zużycie tokenów
+            </a>
+            <a class="nav-item" onclick="nav('reports'); closeOverlay('ov-sidebar');">
+                <span class="nav-icon">⚖️</span>Raport porównania modeli
+            </a>
+            <a href="{{ url_for('change_password') }}" class="nav-item">
+                <span class="nav-icon">🔑</span>Zmiana hasła
+            </a>
+            <a href="{{ url_for('logs_page') }}" class="nav-item">
+                <span class="nav-icon">⚠️</span>Logi błędów
+            </a>
+            <a class="nav-item" onclick="nav('chat'); closeOverlay('ov-sidebar');">
+                <span class="nav-icon">🤖</span>Czat z AI
+            </a>
+        </nav>
+
+        <!-- Footer: Logout (Spec 05) -->
+        <div class="sidebar-footer">
+            <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button>
+            <a href="{{ url_for('logout') }}" class="logout-btn">
+                <span>↩</span> Wyloguj się
+            </a>
+        </div>
+    </div>
+</div>

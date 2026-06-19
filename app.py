@@ -1707,6 +1707,22 @@ def init_db():
     ''')
 
     cursor.execute('''
+        CREATE TABLE IF NOT EXISTS app_logs (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email TEXT,
+            level      TEXT NOT NULL DEFAULT 'error',
+            category   TEXT NOT NULL DEFAULT 'general',
+            message    TEXT NOT NULL,
+            detail     TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_app_logs_user
+        ON app_logs(user_email, created_at)
+    ''')
+
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS ai_models (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             provider TEXT NOT NULL,
@@ -1809,6 +1825,22 @@ def send_email(to_address, subject, body_text):
             srv.sendmail(sender_email, to_address, msg.as_bytes())
 
 
+def log_app_error(user_email, category, message, detail=None, level='error'):
+    """Persist a user-facing error to app_logs. Never raises."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO app_logs (user_email, level, category, message, detail) VALUES (?,?,?,?,?)",
+            (user_email, level, category,
+             str(message)[:1000], str(detail or '')[:4000])
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 @app.route('/reset-password', methods=['GET', 'POST'])
 @limiter.limit("5 per hour", methods=["POST"])
 def reset_password_request():
@@ -1843,6 +1875,7 @@ def reset_password_request():
                 )
             except Exception as exc:
                 app.logger.error("SMTP error: %s", exc)
+                log_app_error(email, 'smtp', 'Błąd wysyłania e-maila z kodem resetowania hasła', str(exc))
                 flash('Błąd wysyłania e-maila. Sprawdź konfigurację SMTP.', 'danger')
                 return render_template('reset-password.html')
         else:
@@ -1951,6 +1984,70 @@ def change_password():
             return redirect(url_for('index_page'))
 
     return render_template('zmiana-hasla.html', is_reset_flow=is_reset_flow)
+
+@app.route('/logs')
+def logs_page():
+    user_email = get_authenticated_user()
+    if not user_email:
+        flash('Musisz się zalogować.', 'danger')
+        return redirect(url_for('login'))
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, level, category, message, detail, datetime(created_at,'localtime') "
+        "FROM app_logs WHERE user_email = ? ORDER BY created_at DESC LIMIT 300",
+        (user_email,)
+    )
+    logs = [{"id": r[0], "level": r[1], "category": r[2],
+             "message": r[3], "detail": r[4], "created_at": r[5]}
+            for r in cursor.fetchall()]
+    conn.close()
+    return render_template('logs-page.html', logs=logs)
+
+
+@app.route('/api/logs', methods=['DELETE'])
+@csrf.exempt
+def clear_logs():
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Unauthorized"}), 401
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM app_logs WHERE user_email = ?", (user_email,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route('/api/logs/<int:log_id>', methods=['DELETE'])
+@csrf.exempt
+def delete_log(log_id):
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Unauthorized"}), 401
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM app_logs WHERE id = ? AND user_email = ?", (log_id, user_email))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route('/api/client-log', methods=['POST'])
+@limiter.limit("30 per hour")
+@csrf.exempt
+def client_log():
+    """Accept client-side error reports from the frontend."""
+    user_email = get_authenticated_user()
+    data = request.get_json(silent=True) or {}
+    message = str(data.get('message') or '').strip()[:500]
+    detail  = str(data.get('detail')  or '').strip()[:2000]
+    category = str(data.get('category') or 'frontend').strip()[:50]
+    if not message:
+        return jsonify({"ok": False}), 400
+    log_app_error(user_email, category, message, detail or None)
+    return jsonify({"ok": True})
+
 
 @app.route('/logout')
 def logout():
@@ -2824,10 +2921,13 @@ def transcribe():
     except ValueError as e:
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
+        log_app_error(user_email, 'transcription', str(e), level='warning')
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
+        import traceback
+        log_app_error(user_email, 'transcription', str(e), traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/youtube/transcribe', methods=['POST'])
@@ -2968,10 +3068,13 @@ def api_youtube_transcribe():
     except ValueError as e:
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
+        log_app_error(user_email, 'youtube', str(e), level='warning')
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
+        import traceback as _tb
+        log_app_error(user_email, 'youtube', str(e), _tb.format_exc())
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/webpage/read', methods=['POST'])
@@ -3062,8 +3165,11 @@ def api_webpage_read():
         })
 
     except ValueError as e:
+        log_app_error(user_email, 'ask-question', str(e), level='warning')
         return jsonify({"error": str(e)}), 400
     except Exception as e:
+        import traceback as _tb
+        log_app_error(user_email, 'ask-question', str(e), _tb.format_exc())
         return jsonify({"error": str(e)}), 500
 
 @app.route('/new-chat', methods=['POST'])
@@ -3186,7 +3292,9 @@ def ask_question():
             "authenticity_score": extract_authenticity_score(odpowiedz_ai),
         })
     except Exception as e:
+        import traceback as _tb
         app.logger.exception("ask-question: error user=%s project_id=%s record_id=%s", user_email, project_id, record_id)
+        log_app_error(user_email, 'ai-chat', f"Błąd AI: {str(e)}", _tb.format_exc())
         return jsonify({"error": f"Błąd AI: {str(e)}"}), 500
 
 @app.route('/delete-history/<int:item_id>', methods=['DELETE'])
