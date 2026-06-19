@@ -13,7 +13,12 @@ import glob
 import uuid
 import hashlib
 import secrets
-from datetime import datetime, timezone
+import random
+import smtplib
+import ssl as _ssl
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file, g, has_request_context
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -1688,6 +1693,20 @@ def init_db():
     ''')
 
     cursor.execute('''
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            email      TEXT NOT NULL,
+            code       TEXT NOT NULL,
+            expires_at DATETIME NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_prt_email
+        ON password_reset_tokens(email)
+    ''')
+
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS ai_models (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             provider TEXT NOT NULL,
@@ -1764,30 +1783,159 @@ def login():
         
     return render_template('login-page.html')
 
+def send_email(to_address, subject, body_text):
+    smtp_server   = os.environ.get('SMTP_SERVER', '').strip()
+    smtp_port     = int(os.environ.get('SMTP_PORT', '465') or '465')
+    smtp_user     = os.environ.get('SMTP_USER', '').strip()
+    smtp_password = os.environ.get('SMTP_PASSWORD', '').strip()
+    sender_email  = os.environ.get('SENDER_EMAIL', smtp_user).strip() or smtp_user
+    if not (smtp_server and smtp_user and smtp_password):
+        raise RuntimeError("Brak konfiguracji SMTP (SMTP_SERVER, SMTP_USER, SMTP_PASSWORD)")
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From']    = sender_email
+    msg['To']      = to_address
+    msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
+    ctx = _ssl.create_default_context()
+    if smtp_port == 465:
+        with smtplib.SMTP_SSL(smtp_server, smtp_port, context=ctx) as srv:
+            srv.login(smtp_user, smtp_password)
+            srv.sendmail(sender_email, to_address, msg.as_bytes())
+    else:
+        with smtplib.SMTP(smtp_server, smtp_port) as srv:
+            srv.ehlo()
+            srv.starttls(context=ctx)
+            srv.login(smtp_user, smtp_password)
+            srv.sendmail(sender_email, to_address, msg.as_bytes())
+
+
+@app.route('/reset-password', methods=['GET', 'POST'])
+@limiter.limit("5 per hour", methods=["POST"])
+def reset_password_request():
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        if not email:
+            flash('Podaj adres e-mail.', 'danger')
+            return render_template('reset-password.html')
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT email FROM users WHERE email = ?", (email,))
+        user = cursor.fetchone()
+
+        if user:
+            cursor.execute("DELETE FROM password_reset_tokens WHERE email = ?", (email,))
+            code = ''.join(str(random.randint(0, 9)) for _ in range(6))
+            expires_at = datetime.utcnow() + timedelta(minutes=10)
+            cursor.execute(
+                "INSERT INTO password_reset_tokens (email, code, expires_at) VALUES (?, ?, ?)",
+                (email, code, expires_at.strftime('%Y-%m-%d %H:%M:%S'))
+            )
+            conn.commit()
+            conn.close()
+            try:
+                send_email(
+                    email,
+                    "Kod weryfikacyjny – reset hasła STT",
+                    f"Twój jednorazowy kod weryfikacyjny:\n\n  {code}\n\n"
+                    f"Kod jest ważny przez 10 minut.\n\n"
+                    f"Jeśli nie prosiłeś(-aś) o reset hasła, zignoruj tę wiadomość."
+                )
+            except Exception as exc:
+                app.logger.error("SMTP error: %s", exc)
+                flash('Błąd wysyłania e-maila. Sprawdź konfigurację SMTP.', 'danger')
+                return render_template('reset-password.html')
+        else:
+            conn.close()
+
+        # nie zdradzamy czy email istnieje
+        flash('Jeśli podany adres e-mail istnieje w systemie, wysłaliśmy kod weryfikacyjny.', 'success')
+        return redirect(url_for('reset_password_verify', email=email))
+
+    return render_template('reset-password.html')
+
+
+@app.route('/reset-password/verify', methods=['GET', 'POST'])
+@limiter.limit("10 per 10 minutes", methods=["POST"])
+def reset_password_verify():
+    email = (request.args.get('email') or request.form.get('email') or '').strip().lower()
+
+    if request.method == 'POST':
+        code_input = ''.join(request.form.get(f'c{i}', '') for i in range(6)).strip()
+        if not code_input:
+            code_input = request.form.get('code', '').strip()
+
+        if not email or len(code_input) != 6:
+            flash('Podaj pełny 6-cyfrowy kod.', 'danger')
+            return render_template('reset-verify.html', email=email)
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, code, expires_at FROM password_reset_tokens WHERE email = ? ORDER BY created_at DESC LIMIT 1",
+            (email,)
+        )
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            flash('Nieprawidłowy kod lub kod wygasł. Spróbuj ponownie.', 'danger')
+            return render_template('reset-verify.html', email=email)
+
+        token_id, stored_code, expires_at_str = row
+        expires_at = datetime.strptime(expires_at_str, '%Y-%m-%d %H:%M:%S')
+
+        if datetime.utcnow() > expires_at:
+            cursor.execute("DELETE FROM password_reset_tokens WHERE id = ?", (token_id,))
+            conn.commit()
+            conn.close()
+            flash('Kod wygasł. Poproś o nowy.', 'danger')
+            return redirect(url_for('reset_password_request'))
+
+        if code_input != stored_code:
+            conn.close()
+            flash('Nieprawidłowy kod. Sprawdź e-mail i spróbuj ponownie.', 'danger')
+            return render_template('reset-verify.html', email=email)
+
+        cursor.execute("DELETE FROM password_reset_tokens WHERE email = ?", (email,))
+        conn.commit()
+        conn.close()
+
+        session['user_email'] = email
+        session['password_reset_flow'] = True
+        return redirect(url_for('change_password'))
+
+    return render_template('reset-verify.html', email=email)
+
+
 @app.route('/change-password', methods=['GET', 'POST'])
 def change_password():
-    print
     if 'user_email' not in session:
         flash('Musisz się zalogować, aby zmienić hasło.', 'danger')
         return redirect(url_for('login'))
-        
+
+    is_reset_flow = session.get('password_reset_flow', False)
+
     if request.method == 'POST':
-        current_password = request.form.get('current_password')
-        new_password = request.form.get('new_password')
-        confirm_new_password = request.form.get('confirm_new_password')
-        
-        email = session['user_email']
-        
+        new_password         = request.form.get('new_password', '')
+        confirm_new_password = request.form.get('confirm_new_password', '')
+        email                = session['user_email']
+
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("SELECT password_hash FROM users WHERE email = ?", (email,))
         user = cursor.fetchone()
-        
+
         pwd_error = validate_password_strength(new_password)
-        if not user or not check_password_hash(user[0], current_password):
-            flash('Aktualne hasło jest niepoprawne.', 'danger')
-            conn.close()
-        elif new_password != confirm_new_password:
+
+        if not is_reset_flow:
+            current_password = request.form.get('current_password', '')
+            if not user or not check_password_hash(user[0], current_password):
+                flash('Aktualne hasło jest niepoprawne.', 'danger')
+                conn.close()
+                return render_template('zmiana-hasla.html', is_reset_flow=False)
+
+        if new_password != confirm_new_password:
             flash('Nowe hasła nie są identyczne.', 'danger')
             conn.close()
         elif pwd_error:
@@ -1798,10 +1946,11 @@ def change_password():
             cursor.execute("UPDATE users SET password_hash = ? WHERE email = ?", (new_hashed, email))
             conn.commit()
             conn.close()
+            session.pop('password_reset_flow', None)
             flash('Hasło zostało pomyślnie zmienione!', 'success')
             return redirect(url_for('index_page'))
-            
-    return render_template('zmiana-hasla.html')
+
+    return render_template('zmiana-hasla.html', is_reset_flow=is_reset_flow)
 
 @app.route('/logout')
 def logout():
