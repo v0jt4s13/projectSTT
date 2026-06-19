@@ -2763,7 +2763,7 @@ def transcribe():
                     display_title = custom_name if custom_name else f"YT: {youtube_download['title']}"
                 except Exception as yt_download_err:
                     app.logger.error("[transcribe] Błąd pobierania audio z YouTube (%s)", yt_download_err)
-                    # raise Exception("Nie można pobrać transkrypcji ani audio z podanego linku YouTube.")    
+                    raise Exception(f"Nie można pobrać transkrypcji ani audio z YouTube: {yt_download_err}")
                 
         elif webpage_url:
             _web_content, _web_title = fetch_webpage_content(webpage_url)

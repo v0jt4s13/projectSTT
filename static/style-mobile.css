@@ -378,7 +378,25 @@ html {
     background: rgba(23,28,41,0.9);
     border: 1px solid var(--border);
     border-radius: 14px 14px 14px 2px;
+    cursor: pointer;
+    transition: max-width .25s ease, border-radius .2s ease, font-size .25s ease;
 }
+.bubble--expanded {
+    max-width: 100% !important;
+    width: 100%;
+    align-self: stretch;
+    border-radius: 10px !important;
+    cursor: pointer;
+}
+.bubble-expand-hint {
+    margin-left: auto;
+    font-size: 11px;
+    opacity: .4;
+    transition: opacity .15s;
+    user-select: none;
+}
+.bubble--ai:hover .bubble-expand-hint { opacity: .75; }
+.bubble--expanded .bubble-expand-hint { opacity: .6; }
 .bubble-header {
     font-size: 11px; color: var(--text-muted);
     margin-bottom: 5px;

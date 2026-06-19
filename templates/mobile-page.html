@@ -1306,7 +1306,8 @@
         if (role !== 'user' && !loading) {
             const hdr = document.createElement('div');
             hdr.className = 'bubble-header';
-            hdr.innerHTML = '🤖 AI' + (score != null ? '&nbsp;' + renderAuthBar(score) : '');
+            hdr.innerHTML = '🤖 AI' + (score != null ? '&nbsp;' + renderAuthBar(score) : '')
+                          + '<span class="bubble-expand-hint" title="Kliknij aby rozszerzyć">↔</span>';
             wrap.appendChild(hdr);
         }
 
@@ -1343,6 +1344,32 @@
 
         feed.appendChild(wrap);
         wrap.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+        if (role !== 'user' && !loading) {
+            const baseFontSize = parseFloat(getComputedStyle(wrap).fontSize) || 14;
+            wrap.addEventListener('click', e => {
+                if (e.target.closest('.bubble-copy')) return;
+                const isExpanded = wrap.classList.contains('bubble--expanded');
+                if (!isExpanded) {
+                    // Compute ratio from known CSS constants (avoids transition-timing issue
+                    // with getBoundingClientRect returning stale value mid-transition).
+                    // chat-feed padding: 16px×2=32; .bubble padding: 12px×2=24
+                    const feed = document.getElementById('chat-feed');
+                    const expandedTextW = feed.clientWidth - 32 - 24;
+                    const collapsedTextW = wrap.getBoundingClientRect().width - 24;
+                    const ratio = expandedTextW / collapsedTextW;
+                    // Set font-size BEFORE adding class so both transitions start together
+                    wrap.style.fontSize = (baseFontSize * ratio).toFixed(2) + 'px';
+                    wrap.classList.add('bubble--expanded');
+                } else {
+                    wrap.style.fontSize = '';
+                    wrap.classList.remove('bubble--expanded');
+                }
+                const hint = wrap.querySelector('.bubble-expand-hint');
+                if (hint) hint.textContent = wrap.classList.contains('bubble--expanded') ? '↩' : '↔';
+            });
+        }
+
         return wrap;
     }
 

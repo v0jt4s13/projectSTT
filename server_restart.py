@@ -26,12 +26,15 @@ def restart_server(delay: float = 1.5) -> None:
     def _worker():
         time.sleep(delay)
         try:
+            args = list(sys.argv)
+            if '--no-local-models' not in args:
+                args.append('--no-local-models')
             logger.warning(
                 "[server_restart] Wykonuję os.execv: %s %s",
-                sys.executable, sys.argv,
+                sys.executable, args,
             )
             _close_inherited_fds()
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            os.execv(sys.executable, [sys.executable] + args)
         except Exception as exc:
             logger.error("[server_restart] os.execv nie powiodło się: %s", exc)
 
