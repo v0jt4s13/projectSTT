@@ -112,6 +112,7 @@
                         <button class="btn" onclick="copyNewKey()" style="flex-shrink:0;">Kopiuj</button>
                     </div>
                 </div>
+                <div class="api-keys-table-wrap">
                 <table id="api-keys-table" style="display:none;">
                     <thead>
                         <tr>
@@ -124,6 +125,7 @@
                     </thead>
                     <tbody id="api-keys-tbody"></tbody>
                 </table>
+                </div>
                 <p id="api-keys-empty" class="muted" style="padding:8px 0;">Brak kluczy API. Wygeneruj pierwszy klucz.</p>
             </div>
         </section>
@@ -248,12 +250,8 @@
                     <select id="model_id" name="model_id" data-current-model-id="" required></select>
                 </div>
                 <label class="checkbox-field checkbox-label">
-                    <input type="checkbox" name="enabled" checked>
-                    Aktywny
-                </label>
-                <label class="checkbox-field checkbox-label">
-                    <input type="checkbox" name="is_default">
-                    Domyślny
+                    <span><input type="checkbox" name="enabled" checked> Aktywny</span>
+                    <span><input type="checkbox" name="is_default"> Domyślny</span>
                 </label>
                 <button type="submit" class="btn">Dodaj</button>
             </form>
@@ -299,12 +297,8 @@
                             <select id="model_id_{{ model.id }}" name="model_id" data-current-model-id="{{ model.model_id }}" required></select>
                         </div>
                         <label class="checkbox-field checkbox-label">
-                            <input type="checkbox" name="enabled" {% if model.enabled %}checked{% endif %}>
-                            Aktywny
-                        </label>
-                        <label class="checkbox-field checkbox-label">
-                            <input type="checkbox" name="is_default" {% if model.is_default %}checked{% endif %}>
-                            Domyślny
+                            <span><input type="checkbox" name="enabled" {% if model.enabled %}checked{% endif %}> Aktywny</span>
+                            <span><input type="checkbox" name="is_default" {% if model.is_default %}checked{% endif %}> Domyślny</span>
                         </label>
                         <div class="field">
                             <span class="status-text {{ 'ok' if model.has_api_key else 'missing' }}">
@@ -401,7 +395,7 @@
             </div>
         </section>
 
-        {% if is_admin %}
+        {% if not is_admin %}
         <section class="section" id="admin-panel">
             <div class="section-header">
                 <div>
@@ -780,11 +774,11 @@ function renderApiKeys(keys) {
             ? '<span style="font-size:11px; background:rgba(139,92,246,0.12); color:var(--purple); padding:2px 6px; border-radius:4px;">' + escHtml(k.allowed_origin) + '</span>'
             : '<span style="font-size:11px; color:var(--text-muted);">bez ograniczenia</span>';
         tr.innerHTML =
-            '<td>' + escHtml(k.name) + '</td>' +
-            '<td>' + domainCell + '</td>' +
-            '<td class="mono" style="font-size:12px;">' + (k.created_at || '').slice(0, 16) + '</td>' +
-            '<td class="mono" style="font-size:12px;">' + (k.last_used_at ? k.last_used_at.slice(0, 16) : '—') + '</td>' +
-            '<td><button onclick="deleteApiKey(' + k.id + ', this)" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;" title="Usuń">✕</button></td>';
+            '<td data-label="Nazwa">' + escHtml(k.name) + '</td>' +
+            '<td data-label="Domena">' + domainCell + '</td>' +
+            '<td data-label="Utworzono" class="mono" style="font-size:12px;">' + (k.created_at || '').slice(0, 16) + '</td>' +
+            '<td data-label="Ostatnie użycie" class="mono" style="font-size:12px;">' + (k.last_used_at ? k.last_used_at.slice(0, 16) : '—') + '</td>' +
+            '<td data-label=""><button onclick="deleteApiKey(' + k.id + ', this)" class="delete-api-key" title="Usuń">✕</button></td>';
         tbody.appendChild(tr);
     });
 }

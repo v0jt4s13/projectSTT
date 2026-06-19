@@ -2,12 +2,18 @@
 label,
 .checkbox-label {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: 1em;
     font-weight: 600;
+    padding-left: 0rem;
+}
+input[type="text"] {
+    max-width: calc(100% - 140px);
+    min-width: 140px;
 }
 input[type="text"],
 select {
-    width: 100%;
+    max-width: calc(100% - 140px);
+    min-width: 140px;
     background-color: var(--bg-control);
     color: var(--text-main);
     border: 1px solid var(--border-color);
@@ -39,8 +45,82 @@ select:focus {
     font-weight: 700;
     white-space: nowrap;
 }
+.delete-api-key {
+    background: none;
+    border: none;
+    color: var(--red);
+    cursor: pointer;
+    font-size: 2em;
+    margin: 0.2em;
+}
+div.section-body .field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-width: 260px;
+    justify-content: space-between;
+    align-items: baseline;
+    /* background-color: aquamarine; */
+}
+@media (max-width: 550px) {
+    .model-editor .field {
+        width: -webkit-fill-available;
+        background-color: #7fffd414;
+    }
+}
 @media (max-width: 960px) {
     body {
         padding: 14px;
     }
+}
+
+/* ── API Keys table – responsive ── */
+.api-keys-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 600px) {
+    #api-keys-table thead { display: none; }
+
+    #api-keys-table tbody tr {
+        display: block;
+        position: relative;
+        background: var(--bg-control, rgba(255,255,255,0.04));
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 10px 40px 10px 14px;
+        margin-bottom: 10px;
+    }
+    #api-keys-table tbody tr:last-child { margin-bottom: 0; }
+
+    #api-keys-table td {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 5px 0;
+        border: none;
+        text-align: left !important;
+        font-size: 13px;
+    }
+    #api-keys-table td::before {
+        content: attr(data-label);
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        min-width: 105px;
+        flex-shrink: 0;
+        padding-top: 2px;
+    }
+    /* Przycisk usuń – prawy górny róg karty */
+    #api-keys-table td[data-label=""] {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        padding: 0;
+        border: none;
+    }
+    #api-keys-table td[data-label=""]::before { display: none; }
 }

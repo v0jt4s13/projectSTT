@@ -1464,10 +1464,13 @@ details.nav-menu > summary:hover {
 
 .model-form,
 .model-editor {
-    display: grid;
+    display: flex;
     grid-template-columns: minmax(120px, 0.8fr) minmax(150px, 1fr) minmax(170px, 1.2fr) minmax(180px, 1.2fr) auto auto auto;
     gap: 12px;
-    align-items: end;
+    align-items: stretch;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
 }
 
 .model-editor {
@@ -1482,9 +1485,12 @@ details.nav-menu > summary:hover {
 
 .field {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 7px;
-    min-width: 0;
+    min-width: 260px;
+    justify-content: space-between;
+    align-items: baseline;
+    /* background-color: aquamarine; */
 }
 
 .checkbox-field {
