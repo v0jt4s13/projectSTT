@@ -1,6 +1,7 @@
 import os
 import base64
 import argparse
+import functools
 import logging
 import json
 import sqlite3
@@ -267,6 +268,43 @@ def get_authenticated_user():
     conn.commit()
     conn.close()
     return user_email
+
+
+def get_user_role(email: str) -> str:
+    """Zwraca rolę użytkownika z sesji (cache) lub z DB. Domyślnie 'user'."""
+    if has_request_context() and session.get('user_email') == email:
+        cached = session.get('user_role')
+        if cached:
+            return cached
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT role FROM users WHERE email = ?", (email,))
+    row = cursor.fetchone()
+    conn.close()
+    role = row[0] if row else 'user'
+    if has_request_context() and session.get('user_email') == email:
+        session['user_role'] = role
+    return role
+
+
+def require_role(*roles):
+    """Dekorator ograniczający dostęp do podanych ról. Zwraca 403 lub redirect do logowania."""
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            email = get_authenticated_user()
+            if not email:
+                if request.is_json or request.path.startswith('/api/'):
+                    return jsonify({"error": "Brak autoryzacji"}), 401
+                return redirect(url_for('login'))
+            if get_user_role(email) not in roles:
+                if request.is_json or request.path.startswith('/api/'):
+                    return jsonify({"error": "Brak uprawnień"}), 403
+                return render_template('login-page.html', error="Brak uprawnień"), 403
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
+
 
 def to_plain_data(value):
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -1592,9 +1630,18 @@ def init_db():
             email TEXT PRIMARY KEY,
             first_name TEXT NOT NULL,
             last_name TEXT NOT NULL,
-            password_hash TEXT NOT NULL
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user'
         )
     ''')
+    cursor.execute("PRAGMA table_info(users)")
+    users_columns = {row[1] for row in cursor.fetchall()}
+    if "role" not in users_columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+        cursor.execute(
+            "UPDATE users SET role = 'admin' WHERE email = ?",
+            (ADMIN_EMAIL,)
+        )
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS projects (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1792,12 +1839,13 @@ def login():
         
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("SELECT email, first_name, last_name, password_hash FROM users WHERE email = ?", (email,))
+        cursor.execute("SELECT email, first_name, last_name, password_hash, COALESCE(role,'user') FROM users WHERE email = ?", (email,))
         user = cursor.fetchone()
         conn.close()
-        
+
         if user and check_password_hash(user[3], password):
             session['user_email'] = user[0]
+            session['user_role']  = user[4]
             flash('Zalogowano pomyślnie!', 'success')
             return redirect(url_for('index_page'))
         else:
@@ -1941,6 +1989,7 @@ def reset_password_verify():
         conn.close()
 
         session['user_email'] = email
+        session['user_role']  = get_user_role(email)
         session['password_reset_flow'] = True
         return redirect(url_for('change_password'))
 
@@ -2204,7 +2253,7 @@ def usage_history():
         return redirect(url_for('login'))
 
     session_email = session['user_email']
-    is_admin      = session_email == ADMIN_EMAIL
+    is_admin      = get_user_role(session_email) == 'admin'
 
     # Admin can view any user's stats via ?view=email, or all users via ?view=__all__
     view_email = request.args.get('view', '').strip() or session_email
@@ -2341,10 +2390,8 @@ def usage_history():
     )
 
 @app.route('/settings', methods=['GET'])
+@require_role('admin')
 def settings():
-    if 'user_email' not in session:
-        flash('Brak dostępu. Musisz się najpierw zalogować!', 'danger')
-        return redirect(url_for('login'))
 
     api_key_status = {
         provider: {
@@ -2374,16 +2421,13 @@ def settings():
         model_pricing=get_effective_model_pricing(),
         audio_pricing=AUDIO_PRICING,
         pricing_last_updated=pricing_last_updated,
-        is_admin=(session.get('user_email') == ADMIN_EMAIL),
+        is_admin=(get_user_role(session.get('user_email', '')) == 'admin'),
         user=current_user,
     )
 
 @app.route('/admin/restart', methods=['POST'])
+@require_role('admin')
 def admin_restart():
-    if 'user_email' not in session:
-        return jsonify({"error": "Brak autoryzacji"}), 401
-    if session['user_email'] != ADMIN_EMAIL:
-        return jsonify({"error": "Brak uprawnień administratora"}), 403
 
     try:
         app.logger.warning("[admin/restart] Restart zainicjowany przez %s", session['user_email'])
@@ -2394,10 +2438,8 @@ def admin_restart():
         return jsonify({"error": f"Błąd: {exc}"}), 500
 
 @app.route('/settings/update-pricing', methods=['POST'])
+@require_role('admin')
 def update_pricing_route():
-    if 'user_email' not in session or session['user_email'] != ADMIN_EMAIL:
-        return jsonify({'ok': False, 'error': 'Brak uprawnień'}), 403
-
     LITELLM_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
     try:
         resp = requests.get(LITELLM_URL, timeout=15)
