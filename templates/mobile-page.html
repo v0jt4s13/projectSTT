@@ -2649,21 +2649,24 @@
     function _show(text, rect) {
         _text = text;
         const p = panel(); if (!p) return;
-        // Force layout to read actual width
         p.style.visibility = 'hidden';
         p.style.display    = 'flex';
         const pw = p.offsetWidth  || 136;
         const ph = p.offsetHeight || 48;
         p.style.visibility = '';
 
-        const vw  = window.innerWidth;
-        let top   = rect.top - ph - 8;
-        if (top < 8) top = rect.bottom + 8;
-        let left  = rect.left + rect.width / 2 - pw / 2;
-        left = Math.max(8, Math.min(left, vw - pw - 8));
+        const GAP = 8;
+        const vh  = window.innerHeight;
 
-        p.style.top  = top  + 'px';
-        p.style.left = left + 'px';
+        // vertical: centre on the selection, clamp to viewport
+        let top = rect.top + rect.height / 2 - ph / 2;
+        top = Math.max(GAP, Math.min(top, vh - ph - GAP));
+
+        // horizontal: flush to right edge
+        const right = GAP;
+        p.style.top   = top   + 'px';
+        p.style.right = right + 'px';
+        p.style.left  = '';
         p.removeAttribute('aria-hidden');
         const tb = ttsBtn();
         if (tb) tb.textContent = _ttsActive ? '⏹' : '🔊';

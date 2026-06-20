@@ -943,7 +943,6 @@ html {
 .sel-panel {
     position: fixed;
     align-items: center;
-    right: 10px;
     background: var(--bg-secondary, #1e1e1e);
     border: 1px solid rgba(255,255,255,0.14);
     border-radius: 12px;
