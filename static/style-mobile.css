@@ -1040,3 +1040,133 @@ html {
     justify-content: center;
 }
 .img-lightbox-close:hover { background: rgba(255,255,255,0.22); }
+
+/* ── Custom prompt pills ── */
+.mode-pill--add {
+    padding: 4px 10px;
+    font-size: 16px;
+    font-weight: 400;
+    opacity: .65;
+    min-width: 32px;
+}
+.mode-pill--add:hover { opacity: 1; }
+
+.mode-pill--custom-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+}
+.mode-pill--custom {
+    border-radius: 20px 0 0 20px;
+    padding-right: 6px;
+}
+.mode-pill--edit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    padding: 0 6px;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+    border-left: none;
+    border-radius: 0 20px 20px 0;
+    background: var(--bg-control);
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: .7;
+}
+.mode-pill--edit-btn:hover { opacity: 1; color: var(--text-primary); }
+
+/* ── Prompt edit overlay form ── */
+.prompt-edit-form {
+    padding: 4px 16px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.prompt-edit-lbl {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+.prompt-edit-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.5;
+}
+.prompt-edit-hint code {
+    background: rgba(255,255,255,0.08);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 11px;
+}
+[data-theme="light"] .prompt-edit-hint code { background: rgba(0,0,0,0.07); }
+.prompt-edit-input {
+    width: 100%;
+    background: var(--bg-control);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 14px;
+    color: var(--text-primary);
+    box-sizing: border-box;
+    outline: none;
+}
+.prompt-edit-input:focus { border-color: var(--accent-blue); }
+.prompt-edit-textarea {
+    width: 100%;
+    min-height: 160px;
+    max-height: 40vh;
+    background: var(--bg-control);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.55;
+    resize: vertical;
+    box-sizing: border-box;
+    outline: none;
+    font-family: inherit;
+}
+.prompt-edit-textarea:focus { border-color: var(--accent-blue); }
+.prompt-edit-actions {
+    display: flex;
+    gap: 10px;
+    padding: 14px 16px 20px;
+    flex-wrap: wrap;
+}
+.btn-primary {
+    padding: 9px 20px;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent-gradient);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.btn-danger-outline {
+    padding: 9px 16px;
+    border: 1px solid rgba(239,68,68,.45);
+    border-radius: 10px;
+    background: none;
+    color: var(--red);
+    font-size: 14px;
+    cursor: pointer;
+}
+.btn-danger-outline:hover { background: rgba(239,68,68,.1); }
+.btn-ghost {
+    padding: 9px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+}
+.btn-ghost:hover { color: var(--text-primary); }

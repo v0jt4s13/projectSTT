@@ -439,10 +439,10 @@
             </button>
         </div>
 
-        <!-- Wybór typu notatki -->        
+        <!-- Wybór typu notatki -->
         <div class="notes-mode-row">
             <span class="notes-mode-lbl">Wybierz typ notatki AI</span>
-            <div class="notes-mode-pills">
+            <div class="notes-mode-pills" id="notes-mode-pills">
                 <button class="mode-pill selected" data-mode="full">Pełne notatki</button>
                 <button class="mode-pill" data-mode="summary">Streszczenie</button>
                 <button class="mode-pill" data-mode="overview">Omówienie</button>
@@ -450,6 +450,8 @@
                 <button class="mode-pill" data-mode="prompt">Prompt AI</button>
                 <button class="mode-pill" data-mode="reel-prepare">Przygotuj rolkę</button>
                 <button class="mode-pill mode-pill--action" data-mode="auth-analysis">🔍 Analiza autentyczności</button>
+                <!-- custom prompts injected here by JS -->
+                <button class="mode-pill mode-pill--add" id="btn-add-prompt" onclick="openPromptEdit(null)" title="Dodaj własny prompt">＋</button>
             </div>
         </div>
 
@@ -735,6 +737,8 @@
     let currentNotesAuthScore = null;
     let currentChatAuthScore  = null;
     let selectedNotesMode     = 'full';
+    let _activeCustomPrompt   = null;   // {id, title, template} gdy selectedNotesMode==='custom'
+    let _editingPromptId      = null;   // id edytowanego prompta w formularzu (null = nowy)
     let notePanelOpen         = false;
     let histSelectMode        = false;
     let histSelectedIds       = new Set();
@@ -977,6 +981,127 @@
         refreshDashCards();
     }
 
+    /* ═══════════════════════════════════════════
+       CUSTOM PROMPTS  (localStorage CRUD + pills)
+    ═══════════════════════════════════════════ */
+    const CP_KEY = 'custom_prompts_v1';
+
+    function _loadCP() {
+        try { return JSON.parse(localStorage.getItem(CP_KEY) || '[]'); } catch { return []; }
+    }
+    function _saveCP(arr) {
+        localStorage.setItem(CP_KEY, JSON.stringify(arr));
+    }
+    function _genId() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    }
+
+    function renderCustomPills() {
+        const container = document.getElementById('notes-mode-pills');
+        // remove old custom pills
+        container.querySelectorAll('.mode-pill--custom-wrap').forEach(el => el.remove());
+        // insert before + button
+        const addBtn = document.getElementById('btn-add-prompt');
+        _loadCP().forEach(cp => {
+            const wrap = document.createElement('span');
+            wrap.className = 'mode-pill--custom-wrap';
+
+            const pill = document.createElement('button');
+            pill.className = 'mode-pill mode-pill--custom';
+            pill.dataset.mode = 'custom';
+            pill.dataset.cpId = cp.id;
+            pill.textContent = cp.title;
+            pill.addEventListener('click', () => {
+                document.querySelectorAll('.mode-pill').forEach(b => b.classList.remove('selected'));
+                pill.classList.add('selected');
+                selectedNotesMode   = 'custom';
+                _activeCustomPrompt = cp;
+            });
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'mode-pill--edit-btn';
+            editBtn.title     = 'Edytuj';
+            editBtn.textContent = '✏';
+            editBtn.addEventListener('click', e => {
+                e.stopPropagation();
+                openPromptEdit(cp.id);
+            });
+
+            wrap.appendChild(pill);
+            wrap.appendChild(editBtn);
+            container.insertBefore(wrap, addBtn);
+        });
+    }
+
+    function openPromptEdit(cpId) {
+        _editingPromptId = cpId;
+        const heading = document.getElementById('prompt-edit-heading');
+        const nameEl  = document.getElementById('prompt-edit-name');
+        const bodyEl  = document.getElementById('prompt-edit-body');
+        const delBtn  = document.getElementById('prompt-edit-del');
+
+        if (cpId) {
+            const cp = _loadCP().find(p => p.id === cpId);
+            if (!cp) return;
+            heading.textContent    = 'Edytuj prompt';
+            nameEl.value           = cp.title;
+            bodyEl.value           = cp.template;
+            delBtn.style.display   = '';
+        } else {
+            heading.textContent    = 'Nowy prompt';
+            nameEl.value           = '';
+            bodyEl.value           = '';
+            delBtn.style.display   = 'none';
+        }
+        openOverlay('ov-prompt-edit');
+        nameEl.focus();
+    }
+
+    function closePromptEdit() {
+        closeOverlay('ov-prompt-edit');
+    }
+
+    function savePromptEdit() {
+        const title    = document.getElementById('prompt-edit-name').value.trim();
+        const template = document.getElementById('prompt-edit-body').value.trim();
+        if (!title)    { showToast('Wpisz nazwę prompta', 'error'); return; }
+        if (!template) { showToast('Wpisz treść prompta', 'error'); return; }
+
+        const prompts = _loadCP();
+        if (_editingPromptId) {
+            const idx = prompts.findIndex(p => p.id === _editingPromptId);
+            if (idx !== -1) {
+                prompts[idx].title    = title;
+                prompts[idx].template = template;
+                if (_activeCustomPrompt?.id === _editingPromptId) {
+                    _activeCustomPrompt = prompts[idx];
+                }
+            }
+        } else {
+            prompts.push({ id: _genId(), title, template });
+        }
+        _saveCP(prompts);
+        renderCustomPills();
+        closePromptEdit();
+        showToast('Prompt zapisany');
+    }
+
+    function deletePromptEdit() {
+        if (!_editingPromptId) return;
+        if (!confirm('Usunąć ten prompt?')) return;
+        const prompts = _loadCP().filter(p => p.id !== _editingPromptId);
+        _saveCP(prompts);
+        if (_activeCustomPrompt?.id === _editingPromptId) {
+            _activeCustomPrompt = null;
+            selectedNotesMode   = 'full';
+            document.querySelectorAll('.mode-pill').forEach(b => b.classList.remove('selected'));
+            document.querySelector('.mode-pill[data-mode="full"]')?.classList.add('selected');
+        }
+        renderCustomPills();
+        closePromptEdit();
+        showToast('Prompt usunięty');
+    }
+
     function processText() {
         const text = document.getElementById('direct-text-input').value.trim();
         if (!text) { showToast('Wpisz lub wklej tekst'); return; }
@@ -1087,6 +1212,9 @@
         fd.append('model_name',      s.model_name);
         fd.append('custom_name',     docName !== 'Transkrypcja' ? docName : (filename || ''));
         fd.append('notes_mode',      selectedNotesMode);
+        if (selectedNotesMode === 'custom' && _activeCustomPrompt) {
+            fd.append('custom_prompt_text', _activeCustomPrompt.template);
+        }
         return fd;
     }
 
@@ -2343,6 +2471,9 @@
         // live sync #direct-text-input → #screen-transcription
         document.getElementById('direct-text-input')
             .addEventListener('input', _syncDirectText);
+
+        // render saved custom prompts into pills
+        renderCustomPills();
     });
 </script>
 <!-- ═══════════════════════════════════════════════════════
@@ -2390,6 +2521,37 @@
 
         <!-- Wyniki -->
         <div id="cmp-results" class="cmp-results"></div>
+    </div>
+</div>
+
+<!-- ── Overlay: Edytor własnego promptu ── -->
+<div id="ov-prompt-edit" class="overlay">
+    <div class="backdrop" onclick="closePromptEdit()"></div>
+    <div class="bsheet">
+        <div class="bsheet-handle"></div>
+        <button class="bsheet-close" onclick="closePromptEdit()" aria-label="Zamknij">✕</button>
+        <div class="bsheet-title" id="prompt-edit-heading">Nowy prompt</div>
+
+        <div class="prompt-edit-form">
+            <label class="prompt-edit-lbl">Nazwa</label>
+            <input id="prompt-edit-name" class="prompt-edit-input" type="text"
+                   placeholder="np. Analiza sentymentu" maxlength="60">
+
+            <label class="prompt-edit-lbl">Treść promptu</label>
+            <p class="prompt-edit-hint">
+                Użyj <code>{{tekst}}</code> aby wstawić transkrypcję w wybranym miejscu.<br>
+                Jeśli pominiesz, tekst zostanie dołączony na końcu automatycznie.
+            </p>
+            <textarea id="prompt-edit-body" class="prompt-edit-textarea"
+                      placeholder="Napisz instrukcję dla modelu AI..."></textarea>
+        </div>
+
+        <div class="prompt-edit-actions">
+            <button class="btn-primary" onclick="savePromptEdit()">Zapisz</button>
+            <button class="btn-danger-outline" id="prompt-edit-del" style="display:none;"
+                    onclick="deletePromptEdit()">Usuń</button>
+            <button class="btn-ghost" onclick="closePromptEdit()">Anuluj</button>
+        </div>
     </div>
 </div>
 

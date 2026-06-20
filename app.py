@@ -1208,7 +1208,14 @@ def fetch_webpage_content(url):
     return '\n'.join(lines), page_title
 
 # Funkcja budująca prompt dla generowania notatek AI z transkrypcji audio
-def build_audio_notes_prompt(raw_text, mode='full'):
+def build_audio_notes_prompt(raw_text, mode='full', custom_prompt_text=''):
+    if mode == 'custom':
+        tpl = custom_prompt_text.strip()
+        if not tpl:
+            tpl = 'Proszę przeanalizować poniższy tekst.'
+        if '{{tekst}}' in tpl:
+            return tpl.replace('{{tekst}}', raw_text)
+        return tpl + '\n\n' + raw_text
     if mode == 'reel-prepare':
         # ── TUTAJ WPISZ SWÓJ PROMPT DLA TRYBU "PRZYGOTUJ ROLKĘ" ──────────────
         # Przykład struktury:
@@ -1384,11 +1391,11 @@ def extract_authenticity_score(notes_text):
     return max(0, min(100, int(match.group(1))))
 
 
-def generate_audio_notes(raw_text, processing_mode, preferred_provider=None, model_used=None, notes_mode='full', notes_model_id=None):
+def generate_audio_notes(raw_text, processing_mode, preferred_provider=None, model_used=None, notes_mode='full', notes_model_id=None, custom_prompt_text=''):
     if not raw_text.strip():
         return "", None
 
-    prompt = build_audio_notes_prompt(raw_text, mode=notes_mode)
+    prompt = build_audio_notes_prompt(raw_text, mode=notes_mode, custom_prompt_text=custom_prompt_text)
     # print(f"[generate_audio_notes] Built prompt len: {len(prompt)} ==> {prompt}\n\n")
 
     if processing_mode == "online":
@@ -1415,7 +1422,7 @@ def get_default_processing_mode():
     return "offline" if LOCAL_MODELS_ENABLED else "online"
 
 # Główna funkcja obsługująca transkrypcję audio i generowanie notatek AI
-def process_audio_transcription(file_path, processing_mode='offline', model_name='base', cloud_model_id=None, language='auto', task='transcribe', notes_mode='full', notes_model_id=None):
+def process_audio_transcription(file_path, processing_mode='offline', model_name='base', cloud_model_id=None, language='auto', task='transcribe', notes_mode='full', notes_model_id=None, custom_prompt_text=''):
     processing_mode = normalize_processing_mode(processing_mode)
     model_name = str(model_name or "base").strip()
     language = str(language or "auto").strip()
@@ -1436,7 +1443,8 @@ def process_audio_transcription(file_path, processing_mode='offline', model_name
             preferred_provider=transcription_model["provider"],
             model_used=str(model_name or cloud_model_id).strip(),
             notes_mode=notes_mode,
-            notes_model_id=notes_model_id
+            notes_model_id=notes_model_id,
+            custom_prompt_text=custom_prompt_text,
         )
 
         return {
@@ -1461,7 +1469,7 @@ def process_audio_transcription(file_path, processing_mode='offline', model_name
 
     result = model.transcribe(file_path, **options)
     raw_text = result["text"]
-    notes, _ = generate_audio_notes(raw_text, processing_mode, preferred_provider=None, model_used=model_name, notes_mode=notes_mode)
+    notes, _ = generate_audio_notes(raw_text, processing_mode, preferred_provider=None, model_used=model_name, notes_mode=notes_mode, custom_prompt_text=custom_prompt_text)
 
     return {
         "text": raw_text,
@@ -2854,8 +2862,9 @@ def transcribe():
     task = request.form.get('task', 'transcribe')
     custom_name = request.form.get('custom_name', '').strip()
     notes_mode = request.form.get('notes_mode', 'full').strip()
-    if notes_mode not in {'full', 'summary', 'overview', 'bullets', 'prompt', 'reel-prepare'}:
+    if notes_mode not in {'full', 'summary', 'overview', 'bullets', 'prompt', 'reel-prepare', 'custom'}:
         notes_mode = 'full'
+    custom_prompt_text = request.form.get('custom_prompt_text', '').strip()
     notes_model_id = request.form.get('notes_model_id') or None
     project_id_form = None
     _raw_pid = request.form.get('project_id')
@@ -3009,7 +3018,8 @@ def transcribe():
                 language=language,
                 task=task,
                 notes_mode=notes_mode,
-                notes_model_id=notes_model_id
+                notes_model_id=notes_model_id,
+                custom_prompt_text=custom_prompt_text,
             )
             surowy_tekst = transcription_result["text"]
             notatki_ai = transcription_result["notes"]
@@ -3156,7 +3166,10 @@ def api_youtube_transcribe():
             model_name=model_name,
             cloud_model_id=cloud_model_id,
             language=language,
-            task=task
+            task=task,
+            notes_mode=notes_mode,
+            notes_model_id=notes_model_id,
+            custom_prompt_text=custom_prompt_text,
         )
 
         if os.path.exists(file_path):
