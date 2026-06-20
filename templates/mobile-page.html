@@ -360,21 +360,10 @@
     <div class="backdrop" onclick="closeOverlay('ov-source')"></div>
     <div class="bsheet">
         <div class="bsheet-handle"></div>
+        <button class="bsheet-close" onclick="closeOverlay('ov-source')" aria-label="Zamknij">✕</button>
 
         <!-- NOTES MODE SELECTOR -->
         <div class="bsheet-title">Wybierz typ notatki AI</div>
-        <div class="notes-mode-row">
-            <!-- <span class="notes-mode-lbl">Wybierz typ notatki AI</span> -->
-            <div class="notes-mode-pills">
-                <button class="mode-pill selected" data-mode="full">Pełne notatki</button>
-                <button class="mode-pill" data-mode="summary">Streszczenie</button>
-                <button class="mode-pill" data-mode="overview">Omówienie</button>
-                <button class="mode-pill" data-mode="bullets">Lista punktów</button>
-                <button class="mode-pill" data-mode="prompt">Prompt AI</button>
-                <button class="mode-pill" data-mode="reel-prepare">Przygotuj rolkę</button>
-                <button class="mode-pill mode-pill--action" data-mode="auth-analysis">🔍 Analiza autentyczności</button>
-            </div>
-        </div>
 
         <!-- MODEL SELECTION STRIP -->
         <div class="src-model-strip">
@@ -448,6 +437,20 @@
             <button class="src-btn src-btn--img" id="sb-img" onclick="selectSrc('img')">
                 <span class="src-icon">📷</span>Obraz
             </button>
+        </div>
+
+        <!-- Wybór typu notatki -->        
+        <div class="notes-mode-row">
+            <span class="notes-mode-lbl">Wybierz typ notatki AI</span>
+            <div class="notes-mode-pills">
+                <button class="mode-pill selected" data-mode="full">Pełne notatki</button>
+                <button class="mode-pill" data-mode="summary">Streszczenie</button>
+                <button class="mode-pill" data-mode="overview">Omówienie</button>
+                <button class="mode-pill" data-mode="bullets">Lista punktów</button>
+                <button class="mode-pill" data-mode="prompt">Prompt AI</button>
+                <button class="mode-pill" data-mode="reel-prepare">Przygotuj rolkę</button>
+                <button class="mode-pill mode-pill--action" data-mode="auth-analysis">🔍 Analiza autentyczności</button>
+            </div>
         </div>
 
         <!-- MIC INPUT -->
