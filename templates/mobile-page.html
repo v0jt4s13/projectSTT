@@ -1239,6 +1239,8 @@
         document.getElementById('player-name').textContent = '—';
         document.getElementById('player-meta').textContent = 'Brak aktywnego nagrania';
 
+        document.getElementById('notes-model-tag').textContent = '';
+
         const nf = document.getElementById('notes-full');
         nf.textContent = 'Brak notatek AI.\nWróć do ekranu głównego i przetworz nagranie lub stronę.';
         nf.classList.add('empty');
@@ -1280,6 +1282,10 @@
                 activeRecordId       = data.record_id  || null;
                 currentNotesAuthScore = data.authenticity_score ?? null;
                 currentChatAuthScore  = null;
+
+                if (data.notes_model_used) {
+                    document.getElementById('notes-model-tag').textContent = data.notes_model_used;
+                }
 
                 refreshDashCards();
                 refreshTranscScreen();
