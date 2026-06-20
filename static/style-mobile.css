@@ -1090,6 +1090,24 @@ html {
     border-radius: 20px 0 0 20px;
     padding-right: 6px;
 }
+.mode-pill--view-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    padding: 0 5px;
+    font-size: 11px;
+    border: 1px solid var(--border-color);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    background: var(--bg-control);
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: .6;
+}
+.mode-pill--view-btn:hover { opacity: 1; color: var(--text-primary); }
+
 .mode-pill--edit-btn {
     display: inline-flex;
     align-items: center;

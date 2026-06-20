@@ -444,13 +444,13 @@
         <div class="notes-mode-row">
             <span class="notes-mode-lbl">Wybierz typ notatki AI</span>
             <div class="notes-mode-pills" id="notes-mode-pills">
-                <span class="mode-pill--sys-wrap"><button class="mode-pill selected" data-mode="full">Pełne notatki</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('full')" title="Edytuj prompt">✏</button></span>
-                <span class="mode-pill--sys-wrap"><button class="mode-pill" data-mode="summary">Streszczenie</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('summary')" title="Edytuj prompt">✏</button></span>
-                <span class="mode-pill--sys-wrap"><button class="mode-pill" data-mode="overview">Omówienie</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('overview')" title="Edytuj prompt">✏</button></span>
-                <span class="mode-pill--sys-wrap"><button class="mode-pill" data-mode="bullets">Lista punktów</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('bullets')" title="Edytuj prompt">✏</button></span>
-                <span class="mode-pill--sys-wrap"><button class="mode-pill" data-mode="prompt">Prompt AI</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('prompt')" title="Edytuj prompt">✏</button></span>
-                <span class="mode-pill--sys-wrap"><button class="mode-pill" data-mode="reel-prepare">Przygotuj rolkę</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('reel-prepare')" title="Edytuj prompt">✏</button></span>
-                <span class="mode-pill--sys-wrap"><button class="mode-pill mode-pill--action" data-mode="auth-analysis">🔍 Analiza autentyczności</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('auth-analysis')" title="Edytuj prompt">✏</button></span>
+                <span class="mode-pill--sys-wrap"><button class="mode-pill selected" data-mode="full">Pełne notatki</button><button class="mode-pill--view-btn" onclick="openSysPillPreview('full')" title="Podgląd promptu">👁</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('full')" title="Edytuj prompt">✏</button></span>
+                <span class="mode-pill--sys-wrap"><button class="mode-pill" data-mode="summary">Streszczenie</button><button class="mode-pill--view-btn" onclick="openSysPillPreview('summary')" title="Podgląd promptu">👁</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('summary')" title="Edytuj prompt">✏</button></span>
+                <span class="mode-pill--sys-wrap"><button class="mode-pill" data-mode="overview">Omówienie</button><button class="mode-pill--view-btn" onclick="openSysPillPreview('overview')" title="Podgląd promptu">👁</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('overview')" title="Edytuj prompt">✏</button></span>
+                <span class="mode-pill--sys-wrap"><button class="mode-pill" data-mode="bullets">Lista punktów</button><button class="mode-pill--view-btn" onclick="openSysPillPreview('bullets')" title="Podgląd promptu">👁</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('bullets')" title="Edytuj prompt">✏</button></span>
+                <span class="mode-pill--sys-wrap"><button class="mode-pill" data-mode="prompt">Prompt AI</button><button class="mode-pill--view-btn" onclick="openSysPillPreview('prompt')" title="Podgląd promptu">👁</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('prompt')" title="Edytuj prompt">✏</button></span>
+                <span class="mode-pill--sys-wrap"><button class="mode-pill" data-mode="reel-prepare">Przygotuj rolkę</button><button class="mode-pill--view-btn" onclick="openSysPillPreview('reel-prepare')" title="Podgląd promptu">👁</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('reel-prepare')" title="Edytuj prompt">✏</button></span>
+                <span class="mode-pill--sys-wrap"><button class="mode-pill mode-pill--action" data-mode="auth-analysis">🔍 Analiza autentyczności</button><button class="mode-pill--view-btn" onclick="openSysPillPreview('auth-analysis')" title="Podgląd promptu">👁</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('auth-analysis')" title="Edytuj prompt">✏</button></span>
                 <!-- custom prompts injected here by JS -->
                 <button class="mode-pill mode-pill--add" id="btn-add-prompt" onclick="openPromptEdit(null)" title="Dodaj własny prompt">＋</button>
             </div>
@@ -1098,6 +1098,41 @@
         }
     }
 
+    async function openSysPillPreview(mode) {
+        const label  = SYSTEM_MODE_LABELS[mode] || mode;
+        const ov     = _loadSysOv();
+        const nameEl = document.getElementById('prompt-edit-name');
+        const bodyEl = document.getElementById('prompt-edit-body');
+        const saveBtn = document.getElementById('prompt-edit-save');
+        const delBtn  = document.getElementById('prompt-edit-del');
+
+        document.getElementById('prompt-edit-heading').textContent = 'Podgląd: ' + label;
+        nameEl.value    = ov[mode] ? label + ' (zmodyfikowany)' : label;
+        nameEl.readOnly = true;
+        bodyEl.value    = 'Ładowanie…';
+        bodyEl.readOnly = true;
+        if (saveBtn) saveBtn.style.display = 'none';
+        delBtn.style.display = 'none';
+
+        openOverlay('ov-prompt-edit');
+
+        try {
+            const res  = await fetch(`${BASE}/api/notes-prompt/${encodeURIComponent(mode)}`,
+                { headers: { 'X-CSRFToken': getCsrfToken() } });
+            const data = await res.json();
+            const sys  = data.prompt || '';
+            if (ov[mode]) {
+                bodyEl.value = '── Aktywny override ──\n' + ov[mode]
+                    + '\n\n── Domyślny systemowy ──\n' + sys;
+            } else {
+                bodyEl.value = sys;
+            }
+        } catch {
+            bodyEl.value = '';
+            showToast('Błąd ładowania promptu', 'error');
+        }
+    }
+
     function openPromptEdit(cpId) {
         _editingPromptId   = cpId;
         _editingSystemMode = null;
@@ -1127,8 +1162,15 @@
 
     function closePromptEdit() {
         _editingSystemMode = null;
-        document.getElementById('prompt-edit-name').readOnly = false;
-        document.getElementById('prompt-edit-del').textContent = 'Usuń';
+        const nameEl  = document.getElementById('prompt-edit-name');
+        const bodyEl  = document.getElementById('prompt-edit-body');
+        const saveBtn = document.getElementById('prompt-edit-save');
+        const delBtn  = document.getElementById('prompt-edit-del');
+        nameEl.readOnly  = false;
+        bodyEl.readOnly  = false;
+        if (saveBtn) saveBtn.style.display = '';
+        delBtn.textContent   = 'Usuń';
+        delBtn.style.display = 'none';
         closeOverlay('ov-prompt-edit');
     }
 
@@ -2693,7 +2735,7 @@
         </div>
 
         <div class="prompt-edit-actions">
-            <button class="btn-primary" onclick="savePromptEdit()">Zapisz</button>
+            <button class="btn-primary" id="prompt-edit-save" onclick="savePromptEdit()">Zapisz</button>
             <button class="btn-danger-outline" id="prompt-edit-del" style="display:none;"
                     onclick="deletePromptEdit()">Usuń</button>
             <button class="btn-ghost" onclick="closePromptEdit()">Anuluj</button>
