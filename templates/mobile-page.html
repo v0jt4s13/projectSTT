@@ -2721,17 +2721,17 @@
             if (_ttsActive) {
                 speechSynthesis.cancel();
                 _ttsActive = false;
-                const tb = ttsBtn(); if (tb) tb.textContent = '🔊';
+                _hide();
                 return;
             }
             const utt  = new SpeechSynthesisUtterance(_text);
             utt.lang   = 'pl-PL';
-            const done = () => { _ttsActive = false; const tb = ttsBtn(); if (tb) tb.textContent = '🔊'; };
+            const done = () => { _ttsActive = false; };
             utt.onend  = done;
             utt.onerror = done;
             speechSynthesis.speak(utt);
             _ttsActive = true;
-            const tb = ttsBtn(); if (tb) tb.textContent = '⏹';
+            _hide();
         });
     });
 })();
