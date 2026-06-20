@@ -352,6 +352,42 @@
     </div>
 </div><!-- /screen-reports -->
 
+<!-- ══════════════════════════════════════════════════════════
+     SCREEN: ROZPOCZNIJ ZADANIE
+═══════════════════════════════════════════════════════════ -->
+<div id="screen-task" class="screen">
+    <div class="topbar">
+        <div class="topbar-left">
+            <h1>Rozpocznij zadanie</h1>
+        </div>
+        <div class="topbar-right">
+            <button class="back-btn" onclick="nav('notes')">‹</button>
+        </div>
+    </div>
+    <div class="screen-scroll">
+
+        <div id="task-endpoint-card" class="task-card" style="display:none;">
+            <div class="task-card-lbl">API Endpoint</div>
+            <div class="task-endpoint-row">
+                <span id="task-method-badge" class="task-method-badge">POST</span>
+                <span id="task-url-text" class="task-url-text"></span>
+            </div>
+            <button id="task-execute-btn" class="task-exec-btn" onclick="executeTask()">▶ Wyślij żądanie</button>
+            <div id="task-response-card" style="display:none; margin-top:14px;">
+                <div class="task-card-lbl">Odpowiedź</div>
+                <div id="task-response-status" class="task-response-status"></div>
+                <pre id="task-response-body" class="task-json-pre"></pre>
+            </div>
+        </div>
+
+        <div class="task-card">
+            <div class="task-card-lbl">Payload JSON</div>
+            <pre id="task-json-display" class="task-json-pre"></pre>
+        </div>
+
+    </div>
+</div><!-- /screen-task -->
+
 
 <!-- ═════════════════════════════════════════════════════════
      OVERLAY A · SOURCE BOTTOM SHEET
@@ -362,9 +398,6 @@
     <div class="bsheet">
         <div class="bsheet-handle"></div>
         <button class="bsheet-close" onclick="closeOverlay('ov-source')" aria-label="Zamknij">✕</button>
-
-        <!-- NOTES MODE SELECTOR -->
-        <div class="bsheet-title">Wybierz typ notatki AI</div>
 
         <!-- MODEL SELECTION STRIP -->
         <div class="src-model-strip">
@@ -440,9 +473,10 @@
             </button>
         </div>
 
+        <div class="bsheet-title">Wybierz typ notatki AI</div>
+
         <!-- Wybór typu notatki -->
         <div class="notes-mode-row">
-            <span class="notes-mode-lbl">Wybierz typ notatki AI</span>
             <div class="notes-mode-pills" id="notes-mode-pills">
                 <span class="mode-pill--sys-wrap"><button class="mode-pill selected" data-mode="full">Pełne notatki</button><button class="mode-pill--view-btn" onclick="openSysPillPreview('full')" title="Podgląd promptu">👁</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('full')" title="Edytuj prompt">✏</button></span>
                 <span class="mode-pill--sys-wrap"><button class="mode-pill" data-mode="summary">Streszczenie</button><button class="mode-pill--view-btn" onclick="openSysPillPreview('summary')" title="Podgląd promptu">👁</button><button class="mode-pill--edit-btn" onclick="openSysPillEdit('summary')" title="Edytuj prompt">✏</button></span>
@@ -1153,7 +1187,19 @@
         } else {
             heading.textContent  = 'Nowy prompt';
             nameEl.value         = '';
-            bodyEl.value         = '';
+            bodyEl.value         = [
+                '# Rola i cel',
+                'Jesteś [rola, np. ekspertem ds. marketingu]. Twoim zadaniem jest [cel, np. przygotowanie podsumowania sprzedażowego].',
+                '',
+                '# Instrukcje',
+                '- [Co model ma zrobić z tekstem]',
+                '- [Format odpowiedzi: lista / akapity / JSON / itp.]',
+                '- [Język odpowiedzi: polski / angielski]',
+                '- [Długość: krótka / rozbudowana]',
+                '',
+                '# Tekst do analizy',
+                '{{tekst}}',
+            ].join('\n');
             delBtn.style.display = 'none';
         }
         openOverlay('ov-prompt-edit');
@@ -1290,7 +1336,11 @@
             refreshTranscScreen();
             refreshNotesScreen();
             enableChat();
-            nav('transcription');
+            if (_notesIsJson(currentNotes)) {
+                _sendNotesJsonToChat(currentNotes);
+            } else {
+                nav('transcription');
+            }
             showToast('Obraz przeanalizowany ✓');
         } catch (e) {
             showToast('Błąd: ' + e.message, 'error');
@@ -1430,6 +1480,8 @@
                 if (activeRecordId) enableChat();
                 if (activeRecordId && selectedNotesMode === 'auth-analysis') {
                     startAuthenticityAnalysis();
+                } else if (_notesIsJson(currentNotes)) {
+                    _sendNotesJsonToChat(currentNotes);
                 }
 
                 setProcessing(false);
@@ -1442,6 +1494,102 @@
             setProcessing(false);
             showToast('Błąd połączenia z serwerem', 'error');
         }
+    }
+
+    function _notesIsJson(text) {
+        const t = (text || '').trim();
+        if (!t.startsWith('{') && !t.startsWith('[')) return false;
+        try { JSON.parse(t); return true; } catch { return false; }
+    }
+
+    function _getCurrentPromptText() {
+        if (selectedNotesMode === 'custom' && _activeCustomPrompt) return _activeCustomPrompt.template;
+        return _loadSysOv()[selectedNotesMode] || '';
+    }
+
+    const _TASK_TRIGGERS = ['Zwróć WYŁĄCZNIE poprawny JSON', 'Prompt wyślij na API endpoint:'];
+    function _hasTaskTrigger() {
+        const tpl = _getCurrentPromptText();
+        if (_TASK_TRIGGERS.some(t => tpl.includes(t))) return true;
+        if (!tpl && selectedNotesMode === 'reel-prepare') return true;
+        return false;
+    }
+
+    function _extractApiEndpoint(promptText) {
+        const m = promptText.match(/Prompt wyślij na API endpoint:\s*(GET|POST)?\s*(https?:\/\/\S+)/i);
+        if (!m) return null;
+        return { method: (m[1] || 'POST').toUpperCase(), url: m[2] };
+    }
+
+    let _taskEndpoint = null;
+
+    function showTaskScreen(json) {
+        const prompt = _getCurrentPromptText();
+        _taskEndpoint = _extractApiEndpoint(prompt);
+
+        let pretty = json;
+        try { pretty = JSON.stringify(JSON.parse(json), null, 2); } catch {}
+        document.getElementById('task-json-display').textContent = pretty;
+
+        const epCard = document.getElementById('task-endpoint-card');
+        if (_taskEndpoint) {
+            document.getElementById('task-method-badge').textContent = _taskEndpoint.method;
+            document.getElementById('task-url-text').textContent     = _taskEndpoint.url;
+            document.getElementById('task-response-card').style.display = 'none';
+            document.getElementById('task-response-body').textContent   = '';
+            epCard.style.display = '';
+        } else {
+            epCard.style.display = 'none';
+        }
+        nav('task');
+    }
+
+    async function executeTask() {
+        if (!_taskEndpoint) return;
+        const btn  = document.getElementById('task-execute-btn');
+        const orig = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Wysyłanie…';
+
+        const statusEl = document.getElementById('task-response-status');
+        const bodyEl   = document.getElementById('task-response-body');
+        const respCard = document.getElementById('task-response-card');
+        respCard.style.display = '';
+        statusEl.textContent   = '';
+        bodyEl.textContent     = '';
+
+        try {
+            const jsonText = document.getElementById('task-json-display').textContent;
+            const opts = { method: _taskEndpoint.method, headers: { 'Content-Type': 'application/json' } };
+            if (_taskEndpoint.method === 'POST') opts.body = jsonText;
+            const url  = _taskEndpoint.method === 'GET'
+                ? _taskEndpoint.url + '?' + new URLSearchParams(JSON.parse(jsonText)).toString()
+                : _taskEndpoint.url;
+            const res  = await fetch(url, opts);
+            const text = await res.text();
+            statusEl.textContent = res.status + ' ' + res.statusText;
+            statusEl.className   = 'task-response-status ' + (res.ok ? 'ok' : 'err');
+            try { bodyEl.textContent = JSON.stringify(JSON.parse(text), null, 2); }
+            catch { bodyEl.textContent = text; }
+        } catch (e) {
+            statusEl.textContent = 'Błąd: ' + e.message;
+            statusEl.className   = 'task-response-status err';
+        } finally {
+            btn.disabled    = false;
+            btn.textContent = orig;
+        }
+    }
+
+    function _sendNotesJsonToChat(json) {
+        if (_hasTaskTrigger()) {
+            showTaskScreen(json);
+            return;
+        }
+        enableChat();
+        const inp = document.getElementById('chat-input');
+        inp.value = json;
+        inp.dispatchEvent(new Event('input'));
+        nav('chat');
     }
 
     function setProcessing(on, msg = 'Przetwarzanie…') {
