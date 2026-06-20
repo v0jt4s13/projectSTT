@@ -1209,13 +1209,13 @@ def fetch_webpage_content(url):
 
 # Funkcja budująca prompt dla generowania notatek AI z transkrypcji audio
 def build_audio_notes_prompt(raw_text, mode='full', custom_prompt_text=''):
-    if mode == 'custom':
-        tpl = custom_prompt_text.strip()
-        if not tpl:
-            tpl = 'Proszę przeanalizować poniższy tekst.'
+    tpl = (custom_prompt_text or '').strip()
+    if tpl:
         if '{{tekst}}' in tpl:
             return tpl.replace('{{tekst}}', raw_text)
         return tpl + '\n\n' + raw_text
+    if mode == 'custom':
+        return 'Proszę przeanalizować poniższy tekst.\n\n' + raw_text
     if mode == 'reel-prepare':
         # ── TUTAJ WPISZ SWÓJ PROMPT DLA TRYBU "PRZYGOTUJ ROLKĘ" ──────────────
         # Przykład struktury:
@@ -2736,6 +2736,17 @@ def ollama_ip_status():
         return jsonify({"available": False, "reason": "error", "url": base_url})
 
 
+@app.route('/api/notes-prompt/<mode>', methods=['GET'])
+def api_notes_prompt(mode):
+    if 'user_email' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    allowed = {'full', 'summary', 'overview', 'bullets', 'prompt', 'reel-prepare', 'auth-analysis', 'custom'}
+    if mode not in allowed:
+        return jsonify({'error': 'Nieznany tryb'}), 400
+    prompt = build_audio_notes_prompt('{{tekst}}', mode)
+    return jsonify({'prompt': prompt})
+
+
 @app.route('/api/models', methods=['GET'])
 def api_models():
     print
@@ -2945,12 +2956,13 @@ def transcribe():
                 notatki_ai, notes_model = generate_audio_notes(
                     surowy_tekst, processing_mode,
                     preferred_provider=preferred_provider, model_used=None,
-                    notes_mode=notes_mode, notes_model_id=notes_model_id
+                    notes_mode=notes_mode, notes_model_id=notes_model_id,
+                    custom_prompt_text=custom_prompt_text
                 )
                 notes_model_used = describe_notes_model(notes_model, processing_mode)
             else:
                 try:
-                    prompt = build_audio_notes_prompt(surowy_tekst, mode=notes_mode)
+                    prompt = build_audio_notes_prompt(surowy_tekst, mode=notes_mode, custom_prompt_text=custom_prompt_text)
                     response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
                     notatki_ai = response['message']['content']
                 except Exception:
@@ -2966,12 +2978,13 @@ def transcribe():
                 notatki_ai, notes_model = generate_audio_notes(
                     surowy_tekst, processing_mode,
                     preferred_provider=preferred_provider, model_used=None,
-                    notes_mode=notes_mode, notes_model_id=notes_model_id
+                    notes_mode=notes_mode, notes_model_id=notes_model_id,
+                    custom_prompt_text=custom_prompt_text
                 )
                 notes_model_used = describe_notes_model(notes_model, processing_mode)
             else:
                 try:
-                    prompt = build_audio_notes_prompt(surowy_tekst, mode=notes_mode)
+                    prompt = build_audio_notes_prompt(surowy_tekst, mode=notes_mode, custom_prompt_text=custom_prompt_text)
                     response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
                     notatki_ai = response['message']['content']
                 except Exception:
@@ -2999,13 +3012,14 @@ def transcribe():
                 notatki_ai, notes_model = generate_audio_notes(
                     surowy_tekst, processing_mode,
                     preferred_provider=preferred_provider, model_used=None,
-                    notes_mode=notes_mode, notes_model_id=notes_model_id
+                    notes_mode=notes_mode, notes_model_id=notes_model_id,
+                    custom_prompt_text=custom_prompt_text
                 )
                 notes_model_used = describe_notes_model(notes_model, processing_mode)
                 model_used_info = f"Strona internetowa + notatki: {describe_cloud_model(notes_model)}"
             else:
                 try:
-                    prompt = build_audio_notes_prompt(surowy_tekst, mode=notes_mode)
+                    prompt = build_audio_notes_prompt(surowy_tekst, mode=notes_mode, custom_prompt_text=custom_prompt_text)
                     response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': prompt}])
                     notatki_ai = response['message']['content']
                 except Exception:
@@ -3111,6 +3125,8 @@ def api_youtube_transcribe():
     language = get_payload_setting(payload, settings, "language", "auto")
     task = get_payload_setting(payload, settings, "task", "transcribe")
     custom_name = str(get_payload_setting(payload, settings, "custom_name", "") or "").strip()
+    notes_mode = str(get_payload_setting(payload, settings, "notes_mode", "full") or "full").strip()
+    custom_prompt_text = str(get_payload_setting(payload, settings, "custom_prompt_text", "") or "").strip()
     save_to_history = parse_bool_setting(get_payload_setting(payload, settings, "save_to_history"), default=False)
 
     file_path = None
@@ -3133,7 +3149,8 @@ def api_youtube_transcribe():
             preferred_provider = selected_transcription_model["provider"] if selected_transcription_model else None
             notatki_ai, notes_model = generate_audio_notes(
                 yt_transcript["text"], processing_mode,
-                preferred_provider=preferred_provider, model_used=None
+                preferred_provider=preferred_provider, model_used=None,
+                notes_mode=notes_mode, custom_prompt_text=custom_prompt_text
             )
             notes_model_used = describe_notes_model(notes_model, processing_mode)
             saved_name = custom_name if custom_name else yt_transcript["title"]
@@ -3258,6 +3275,8 @@ def api_webpage_read():
     processing_mode = get_payload_setting(payload, settings, "processing_mode", get_default_processing_mode())
     cloud_model_id = get_payload_setting(payload, settings, "cloud_model_id")
     custom_name = str(get_payload_setting(payload, settings, "custom_name", "") or "").strip()
+    notes_mode = str(get_payload_setting(payload, settings, "notes_mode", "full") or "full").strip()
+    custom_prompt_text = str(get_payload_setting(payload, settings, "custom_prompt_text", "") or "").strip()
     save_to_history = parse_bool_setting(get_payload_setting(payload, settings, "save_to_history"), default=False)
 
     try:
@@ -3269,10 +3288,12 @@ def api_webpage_read():
             selected_transcription_model = get_selected_transcription_model(cloud_model_id)
             preferred_provider = selected_transcription_model["provider"] if selected_transcription_model else None
             notes, notes_model = generate_audio_notes(
-                web_text, 
-                processing_mode, 
+                web_text,
+                processing_mode,
                 preferred_provider=preferred_provider,
-                model_used=None
+                model_used=None,
+                notes_mode=notes_mode,
+                custom_prompt_text=custom_prompt_text
             )
             notes_model_used = describe_notes_model(notes_model, processing_mode)
             model_used_info = f"Strona internetowa + notatki: {describe_cloud_model(notes_model)}"
@@ -3702,13 +3723,14 @@ def compare_notes_api():
         return jsonify({"error": "Brak autoryzacji"}), 401
 
     data = request.get_json(silent=True) or {}
-    source_ids = data.get('source_ids') or []
-    model_ids  = data.get('model_ids')  or []
-    notes_mode = data.get('notes_mode', 'full')
+    source_ids        = data.get('source_ids') or []
+    model_ids         = data.get('model_ids')  or []
+    notes_mode        = data.get('notes_mode', 'full')
+    custom_prompt_text = str(data.get('custom_prompt_text') or '').strip()
 
     if not isinstance(model_ids, list) or not (1 <= len(model_ids) <= 4):
         return jsonify({"error": "Wybierz 1–4 modele"}), 400
-    if notes_mode not in {'full', 'summary', 'overview', 'bullets', 'prompt'}:
+    if notes_mode not in {'full', 'summary', 'overview', 'bullets', 'prompt', 'custom', 'reel-prepare', 'auth-analysis'}:
         notes_mode = 'full'
 
     # load source texts
@@ -3757,7 +3779,8 @@ def compare_notes_api():
                 preferred_provider=model.get('provider'),
                 model_used=None,
                 notes_mode=notes_mode,
-                notes_model_id=model.get('id')
+                notes_model_id=model.get('id'),
+                custom_prompt_text=custom_prompt_text
             )
             return {
                 "model_id": model["id"], "display_name": model["display_name"],

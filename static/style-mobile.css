@@ -1078,11 +1078,14 @@ html {
 }
 .mode-pill--add:hover { opacity: 1; }
 
-.mode-pill--custom-wrap {
+.mode-pill--custom-wrap,
+.mode-pill--sys-wrap {
     display: inline-flex;
     align-items: center;
     gap: 0;
 }
+.mode-pill--custom-wrap > .mode-pill,
+.mode-pill--sys-wrap > .mode-pill,
 .mode-pill--custom {
     border-radius: 20px 0 0 20px;
     padding-right: 6px;
@@ -1103,6 +1106,16 @@ html {
     opacity: .7;
 }
 .mode-pill--edit-btn:hover { opacity: 1; color: var(--text-primary); }
+
+.mode-pill--overridden { border-color: var(--purple) !important; }
+.mode-pill--overridden::after {
+    content: '✦';
+    font-size: 8px;
+    color: var(--purple);
+    vertical-align: super;
+    margin-left: 3px;
+    line-height: 1;
+}
 
 /* ── Prompt edit overlay form ── */
 .prompt-edit-form {
