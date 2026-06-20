@@ -1507,7 +1507,7 @@
         return _loadSysOv()[selectedNotesMode] || '';
     }
 
-    const _TASK_TRIGGERS = ['Zwróć WYŁĄCZNIE poprawny JSON', 'Prompt wyślij na API endpoint:'];
+    const _TASK_TRIGGERS = ['Zwróć WYŁĄCZNIE poprawny JSON', 'Prompt wyślij na API endpoint:', 'Prompt API endpoint'];
     function _hasTaskTrigger() {
         const tpl = _getCurrentPromptText();
         if (_TASK_TRIGGERS.some(t => tpl.includes(t))) return true;
@@ -1516,7 +1516,7 @@
     }
 
     function _extractApiEndpoint(promptText) {
-        const m = promptText.match(/Prompt wyślij na API endpoint:\s*(GET|POST)?\s*(https?:\/\/\S+)/i);
+        const m = promptText.match(/Prompt(?:\s+wyślij na)?\s+API\s+endpoint:?\s*(GET|POST)?\s*(https?:\/\/\S+)/i);
         if (!m) return null;
         return { method: (m[1] || 'POST').toUpperCase(), url: m[2] };
     }
