@@ -2425,6 +2425,85 @@ def settings():
         user=current_user,
     )
 
+@app.route('/admin/users', methods=['GET'])
+@require_role('admin')
+def admin_users():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    # current admin info
+    c.execute(
+        "SELECT email, first_name, last_name FROM users WHERE email = ?",
+        (session['user_email'],)
+    )
+    _u = c.fetchone()
+    current_user = {"email": _u[0], "first_name": _u[1], "last_name": _u[2]} if _u else {}
+
+    # all users with transcription count
+    c.execute("""
+        SELECT u.email, u.first_name, u.last_name, COALESCE(u.role,'user'),
+               COUNT(h.id) AS rec_count
+        FROM users u
+        LEFT JOIN history h ON h.user_email = u.email
+        GROUP BY u.email
+        ORDER BY u.email
+    """)
+    users = [
+        {"email": r[0], "first_name": r[1], "last_name": r[2],
+         "role": r[3], "rec_count": r[4]}
+        for r in c.fetchall()
+    ]
+    conn.close()
+    return render_template('admin-users.html', users=users, user=current_user,
+                           is_admin=True)
+
+
+@app.route('/admin/users/<path:email>/role', methods=['POST'])
+@require_role('admin')
+def admin_set_role(email):
+    data = request.get_json(silent=True) or {}
+    new_role = data.get('role', '').strip()
+    if new_role not in ('admin', 'user'):
+        return jsonify({"error": "Nieprawidłowa rola"}), 400
+    if email == session['user_email'] and new_role != 'admin':
+        return jsonify({"error": "Nie możesz odebrać sobie roli admina"}), 400
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT email FROM users WHERE email = ?", (email,))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({"error": "Użytkownik nie istnieje"}), 404
+    c.execute("UPDATE users SET role = ? WHERE email = ?", (new_role, email))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "email": email, "role": new_role})
+
+
+@app.route('/admin/users/<path:email>', methods=['DELETE'])
+@require_role('admin')
+def admin_delete_user(email):
+    if email == session['user_email']:
+        return jsonify({"error": "Nie możesz usunąć własnego konta"}), 400
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT email FROM users WHERE email = ?", (email,))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({"error": "Użytkownik nie istnieje"}), 404
+    # image cleanup before cascade delete
+    c.execute("SELECT image_path FROM history WHERE user_email = ? AND image_path IS NOT NULL", (email,))
+    for (img_rel,) in c.fetchall():
+        try:
+            img_abs = os.path.realpath(os.path.join(BASE_DIR, img_rel))
+            if img_abs.startswith(os.path.realpath(IMAGE_UPLOAD_FOLDER)):
+                os.remove(img_abs)
+        except OSError:
+            pass
+    c.execute("DELETE FROM users WHERE email = ?", (email,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
 @app.route('/admin/restart', methods=['POST'])
 @require_role('admin')
 def admin_restart():

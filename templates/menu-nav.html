@@ -26,6 +26,11 @@
             <a href="{{ url_for('settings') }}" class="nav-item">
                 <span class="nav-icon">⚙️</span>Ustawienia systemowe
             </a>
+            {% if session.get('user_role') == 'admin' %}
+            <a href="{{ url_for('admin_users') }}" class="nav-item">
+                <span class="nav-icon">👥</span>Użytkownicy
+            </a>
+            {% endif %}
             <a href="{{ url_for('usage_history') }}" class="nav-item">
                 <span class="nav-icon">📊</span>Zużycie tokenów
             </a>

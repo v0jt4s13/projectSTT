@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Zarządzanie użytkownikami</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style-settings.css') }}">
+    <script>(function(){var s=localStorage.getItem('theme');document.documentElement.setAttribute('data-theme',s||(window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'));})();</script>
+    <style>
+        .admin-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 28px;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .admin-topbar h1 { margin: 0; font-size: 22px; }
+        .nav-links { display: flex; gap: 12px; flex-wrap: wrap; }
+        .nav-links a {
+            font-size: 13px;
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        .nav-links a:hover { color: var(--text-primary); border-color: var(--text-muted); }
+
+        .users-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        .users-table th {
+            text-align: left;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: var(--text-muted);
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .users-table td {
+            padding: 12px 12px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 14px;
+            vertical-align: middle;
+        }
+        .users-table tr:last-child td { border-bottom: none; }
+        .users-table tr:hover td { background: rgba(255,255,255,0.03); }
+        [data-theme="light"] .users-table tr:hover td { background: rgba(0,0,0,0.025); }
+
+        .role-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .04em;
+        }
+        .role-badge--admin { background: rgba(251,191,36,0.18); color: #fbbf24; }
+        .role-badge--user  { background: rgba(99,102,241,0.15); color: #818cf8; }
+
+        .role-select {
+            background: var(--bg-control);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 5px 10px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .role-select:focus { outline: none; border-color: var(--accent-blue); }
+
+        .btn-del {
+            background: none;
+            border: 1px solid rgba(239,68,68,0.4);
+            color: var(--red, #ef4444);
+            border-radius: 8px;
+            padding: 5px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .btn-del:hover { background: rgba(239,68,68,0.1); }
+        .btn-del:disabled { opacity: .4; cursor: default; }
+
+        .self-row td { opacity: .7; }
+        .email-cell { font-family: monospace; font-size: 13px; }
+        .count-cell { text-align: right; color: var(--text-muted); }
+
+        #toast-admin {
+            position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+            background: var(--bg-panel); border: 1px solid var(--border-color);
+            color: var(--text-primary); border-radius: 12px;
+            padding: 10px 20px; font-size: 14px; z-index: 9999;
+            box-shadow: 0 4px 16px rgba(0,0,0,.35);
+            opacity: 0; transition: opacity .25s; pointer-events: none;
+        }
+        #toast-admin.show { opacity: 1; }
+
+        @media (max-width: 680px) {
+            .users-table thead { display: none; }
+            .users-table tr {
+                display: flex; flex-direction: column;
+                border: 1px solid var(--border-color);
+                border-radius: 10px; margin-bottom: 10px;
+                padding: 12px 14px;
+            }
+            .users-table td { border: none; padding: 4px 0; }
+            .users-table td::before {
+                content: attr(data-label) " ";
+                font-size: 11px; font-weight: 700;
+                text-transform: uppercase; color: var(--text-muted);
+                margin-right: 6px;
+            }
+            .count-cell { text-align: left; }
+        }
+    </style>
+</head>
+<body>
+<main class="page">
+    <div class="admin-topbar">
+        <h1>👥 Użytkownicy</h1>
+        <div class="nav-links">
+            <a href="{{ url_for('settings') }}">⚙️ Ustawienia</a>
+            <a href="{{ url_for('usage_history') }}">📊 Zużycie</a>
+            <a href="{{ url_for('index_page') }}">🏠 Panel</a>
+        </div>
+    </div>
+
+    <div class="section-body" style="background:var(--bg-panel);border:1px solid var(--border-color);border-radius:12px;overflow:hidden;">
+        <table class="users-table">
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Imię i nazwisko</th>
+                    <th>Rola</th>
+                    <th class="count-cell">Transkrypcje</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for u in users %}
+            {% set is_self = (u.email == user.email) %}
+            <tr class="{{ 'self-row' if is_self else '' }}" data-email="{{ u.email }}">
+                <td class="email-cell" data-label="Email">
+                    {{ u.email }}
+                    {% if is_self %}<span style="font-size:11px;color:var(--text-muted);"> (Ty)</span>{% endif %}
+                </td>
+                <td data-label="Imię">{{ u.first_name }} {{ u.last_name }}</td>
+                <td data-label="Rola">
+                    {% if is_self %}
+                        <span class="role-badge role-badge--admin">admin</span>
+                    {% else %}
+                        <select class="role-select" data-email="{{ u.email }}" onchange="changeRole(this)">
+                            <option value="user"  {% if u.role == 'user'  %}selected{% endif %}>user</option>
+                            <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>admin</option>
+                        </select>
+                    {% endif %}
+                </td>
+                <td class="count-cell" data-label="Transkrypcje">{{ u.rec_count }}</td>
+                <td data-label="">
+                    {% if not is_self %}
+                    <button class="btn-del" data-email="{{ u.email }}"
+                            onclick="deleteUser(this, '{{ u.email|e }}', '{{ u.first_name|e }} {{ u.last_name|e }}')">
+                        Usuń
+                    </button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <p style="margin-top:16px;font-size:12px;color:var(--text-muted);">
+        Łącznie: {{ users|length }} użytkownik{{ 'ów' if users|length != 1 else '' }}
+    </p>
+</main>
+
+<div id="toast-admin"></div>
+
+<script>
+const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+
+function toast(msg, ok = true) {
+    const el = document.getElementById('toast-admin');
+    el.textContent = msg;
+    el.style.borderColor = ok ? 'rgba(16,185,129,.5)' : 'rgba(239,68,68,.5)';
+    el.classList.add('show');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+async function changeRole(sel) {
+    const email   = sel.dataset.email;
+    const newRole = sel.value;
+    const prev    = newRole === 'admin' ? 'user' : 'admin';
+    try {
+        const r = await fetch(`/admin/users/${encodeURIComponent(email)}/role`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+            body: JSON.stringify({ role: newRole })
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Błąd');
+        toast(`Rola ${email} → ${newRole}`);
+        const row = sel.closest('tr');
+        if (row) {
+            row.querySelector('.role-select').value = newRole;
+        }
+    } catch (e) {
+        toast(e.message, false);
+        sel.value = prev;
+    }
+}
+
+async function deleteUser(btn, email, name) {
+    const label = name.trim() || email;
+    if (!confirm(`Usunąć użytkownika „${label}"?\n\nZostanie usunięta cała jego historia i dane. Tej operacji nie można cofnąć.`)) return;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+        const r = await fetch(`/admin/users/${encodeURIComponent(email)}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': CSRF }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Błąd');
+        const row = btn.closest('tr');
+        row.style.transition = 'opacity .3s';
+        row.style.opacity = '0';
+        setTimeout(() => row.remove(), 320);
+        toast(`Usunięto: ${email}`);
+    } catch (e) {
+        toast(e.message, false);
+        btn.disabled = false;
+        btn.textContent = 'Usuń';
+    }
+}
+</script>
+</body>
+</html>
