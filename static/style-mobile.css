@@ -866,3 +866,44 @@ html {
 [data-theme="light"] .rep-table thead { background:var(--bg,#fff); }
 [data-theme="light"] .rep-table th    { border-bottom-color:rgba(0,0,0,0.1); }
 [data-theme="light"] .rep-table td    { border-bottom-color:rgba(0,0,0,0.05); }
+
+/* ── T1: font scale ── */
+:root { --font-scale: 1; }
+
+.bubble           { font-size: calc(14px * var(--font-scale)); }
+.notes-body-text,
+#notes-full       { font-size: calc(14px * var(--font-scale)); }
+.cmp-card-body    { font-size: calc(13px * var(--font-scale)); }
+.hist-src-name,
+.hist-item-info > span { font-size: calc(13px * var(--font-scale)); }
+
+/* ── T4: bubble title ── */
+.bubble-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: default;
+}
+
+/* ── sidebar controls row ── */
+.sidebar-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+.font-btn {
+    font-size: 13px !important;
+    font-weight: 700;
+    width: 36px !important;
+    height: 36px !important;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    letter-spacing: -0.5px;
+}
+.font-btn:disabled { opacity: .3; cursor: default; }
+[data-theme="light"] .font-btn { border-color: rgba(0,0,0,0.12); }

@@ -14,6 +14,8 @@
             const saved = localStorage.getItem('theme');
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             document.documentElement.setAttribute('data-theme', saved || (prefersDark ? 'dark' : 'light'));
+            const scale = parseFloat(localStorage.getItem('font-scale') || '1');
+            if (scale !== 1) document.documentElement.style.setProperty('--font-scale', scale);
         })();
     </script>
     <script nonce="{{ csp_nonce() }}">
@@ -773,6 +775,35 @@
         if (btn) btn.textContent = document.documentElement.getAttribute('data-theme') === 'light' ? '☀️' : '🌙';
     }
 
+    /* ── T1: font scale ── */
+    const FS_MIN = 0.85, FS_MAX = 1.30, FS_STEP = 0.05;
+    function getFontScale() {
+        return parseFloat(document.documentElement.style.getPropertyValue('--font-scale') || '1') || 1;
+    }
+    function setFontScale(v) {
+        v = Math.round(Math.max(FS_MIN, Math.min(FS_MAX, v)) * 100) / 100;
+        document.documentElement.style.setProperty('--font-scale', v);
+        localStorage.setItem('font-scale', v);
+        _updateFontBtns();
+    }
+    function incFontScale() { setFontScale(getFontScale() + FS_STEP); }
+    function decFontScale() { setFontScale(getFontScale() - FS_STEP); }
+    function _updateFontBtns() {
+        const v = getFontScale();
+        const d = document.getElementById('font-dec');
+        const i = document.getElementById('font-inc');
+        if (d) d.disabled = v <= FS_MIN;
+        if (i) i.disabled = v >= FS_MAX;
+    }
+
+    /* ── T4: auto-title ── */
+    function extractTitle(text, n = 10) {
+        const plain = String(text || '').replace(/[#*`_~\[\]>]/g, '').replace(/\s+/g, ' ').trim();
+        const words = plain.split(' ');
+        const slice = words.slice(0, n).join(' ');
+        return words.length > n ? slice + '…' : slice;
+    }
+
     function openHistory() {
         histSelectMode = false;
         histSelectedIds.clear();
@@ -1306,7 +1337,10 @@
         if (role !== 'user' && !loading) {
             const hdr = document.createElement('div');
             hdr.className = 'bubble-header';
-            hdr.innerHTML = '🤖 AI' + (score != null ? '&nbsp;' + renderAuthBar(score) : '')
+            const titleStr = extractTitle(text);
+            hdr.innerHTML = '<span class="bubble-title" title="' + esc(text.slice(0, 120)) + '">'
+                          + esc(titleStr) + '</span>'
+                          + (score != null ? '&nbsp;' + renderAuthBar(score) : '')
                           + '<span class="bubble-expand-hint" title="Kliknij aby rozszerzyć">↔</span>';
             wrap.appendChild(hdr);
         }
@@ -2090,6 +2124,7 @@
     ═══════════════════════════════════════════ */
     document.addEventListener('DOMContentLoaded', () => {
         updateThemeBtn();
+        _updateFontBtns();
         const ta = document.getElementById('chat-input');
         ta.addEventListener('focus', function () {
             this.style.height = '50vh';

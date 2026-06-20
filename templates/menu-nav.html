@@ -45,7 +45,11 @@
 
         <!-- Footer: Logout (Spec 05) -->
         <div class="sidebar-footer">
-            <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button>
+            <div class="sidebar-controls">
+                <button class="icon-btn font-btn" id="font-dec" onclick="decFontScale()" title="Zmniejsz czcionkę">A−</button>
+                <button class="icon-btn font-btn" id="font-inc" onclick="incFontScale()" title="Powiększ czcionkę">A+</button>
+                <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button>
+            </div>
             <a href="{{ url_for('logout') }}" class="logout-btn">
                 <span>↩</span> Wyloguj się
             </a>
