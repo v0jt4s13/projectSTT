@@ -1,4 +1,5 @@
 import os
+import base64
 import argparse
 import logging
 import json
@@ -198,6 +199,8 @@ Talisman(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'temp_uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+IMAGE_UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'user_uploads')
+os.makedirs(IMAGE_UPLOAD_FOLDER, exist_ok=True)
 
 DB_FILE = 'users.db'
 LOCAL_MODELS_ENABLED = not _no_local_models
@@ -1431,7 +1434,7 @@ def process_audio_transcription(file_path, processing_mode='offline', model_name
         "model_used": f"Lokalny Whisper ({model_name})"
     }
 
-def save_transcription_history(user_email, display_title, raw_text, notes, notes_model_used="", openai_usage_history=None, project_id=None):
+def save_transcription_history(user_email, display_title, raw_text, notes, notes_model_used="", openai_usage_history=None, project_id=None, image_path=None):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     if project_id is None:
@@ -1442,8 +1445,8 @@ def save_transcription_history(user_email, display_title, raw_text, notes, notes
         project_id = cursor.lastrowid
     cursor.execute(
         """
-        INSERT INTO history (user_email, filename, raw_text, ai_notes, notes_model_used, openai_usage_history, project_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO history (user_email, filename, raw_text, ai_notes, notes_model_used, openai_usage_history, project_id, image_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_email,
@@ -1452,7 +1455,8 @@ def save_transcription_history(user_email, display_title, raw_text, notes, notes
             notes.strip(),
             str(notes_model_used or "").strip(),
             serialize_openai_usage_history(openai_usage_history),
-            project_id
+            project_id,
+            image_path
         )
     )
     record_id = cursor.lastrowid
@@ -1626,6 +1630,8 @@ def init_db():
         cursor.execute("ALTER TABLE history ADD COLUMN openai_usage_history TEXT DEFAULT ''")
     if "project_id" not in history_columns:
         cursor.execute("ALTER TABLE history ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL")
+    if "image_path" not in history_columns:
+        cursor.execute("ALTER TABLE history ADD COLUMN image_path TEXT")
     # migrate: każdy history bez projektu dostaje własny projekt (single-source)
     cursor.execute("SELECT id, user_email, filename, created_at FROM history WHERE project_id IS NULL")
     for hid, email, fname, hcreated in cursor.fetchall():
@@ -2643,7 +2649,7 @@ def get_history():
 
     cursor.execute(
         """
-        SELECT id, filename, raw_text, ai_notes, COALESCE(notes_model_used, ''), COALESCE(openai_usage_history, ''), datetime(created_at, 'localtime'), project_id
+        SELECT id, filename, raw_text, ai_notes, COALESCE(notes_model_used, ''), COALESCE(openai_usage_history, ''), datetime(created_at, 'localtime'), project_id, image_path
         FROM history
         WHERE user_email = ?
         ORDER BY created_at DESC
@@ -2695,6 +2701,7 @@ def get_history():
             "chat_messages": chat_messages,
             "chat_count": len(chat_messages),
             "project_id": r[7],
+            "image_path": r[8],
             "authenticity_score": extract_authenticity_score(r[3]),
             "token_summary": compute_token_summary([notes_usage] + chat_usage_lists),
         })
@@ -3306,15 +3313,22 @@ def delete_history(item_id):
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT project_id FROM history WHERE id = ? AND user_email = ?", (item_id, user_email))
+    cursor.execute("SELECT project_id, image_path FROM history WHERE id = ? AND user_email = ?", (item_id, user_email))
     row = cursor.fetchone()
     if row:
-        pid = row[0]
+        pid, img_rel = row[0], row[1]
         cursor.execute("DELETE FROM history WHERE id = ? AND user_email = ?", (item_id, user_email))
         if pid:
             cursor.execute("SELECT COUNT(*) FROM history WHERE project_id = ?", (pid,))
             if cursor.fetchone()[0] == 0:
                 cursor.execute("DELETE FROM projects WHERE id = ? AND user_email = ?", (pid, user_email))
+        if img_rel:
+            try:
+                img_abs = os.path.realpath(os.path.join(BASE_DIR, img_rel))
+                if img_abs.startswith(os.path.realpath(IMAGE_UPLOAD_FOLDER)):
+                    os.remove(img_abs)
+            except OSError:
+                pass
     conn.commit()
     conn.close()
     return jsonify({"success": True})
@@ -3338,10 +3352,22 @@ def delete_history_bulk():
         ids + [user_email]
     )
     affected_projects = [r[0] for r in cursor.fetchall()]
+    cursor.execute(
+        f"SELECT image_path FROM history WHERE id IN ({placeholders}) AND user_email = ? AND image_path IS NOT NULL",
+        ids + [user_email]
+    )
+    image_paths_to_delete = [r[0] for r in cursor.fetchall()]
     cursor.executemany(
         "DELETE FROM history WHERE id = ? AND user_email = ?",
         [(i, user_email) for i in ids]
     )
+    for img_rel in image_paths_to_delete:
+        try:
+            img_abs = os.path.realpath(os.path.join(BASE_DIR, img_rel))
+            if img_abs.startswith(os.path.realpath(IMAGE_UPLOAD_FOLDER)):
+                os.remove(img_abs)
+        except OSError:
+            pass
     for pid in affected_projects:
         cursor.execute("SELECT COUNT(*) FROM history WHERE project_id = ?", (pid,))
         if cursor.fetchone()[0] == 0:
@@ -3853,6 +3879,148 @@ def remove_project_source(project_id, history_id):
     conn.commit()
     conn.close()
     return jsonify({"success": True})
+
+
+_ALLOWED_IMAGE_MIMES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+_ALLOWED_IMAGE_EXTS  = {'jpg', 'jpeg', 'png', 'webp', 'gif'}
+_IMAGE_VISION_MODEL  = 'gpt-4o'
+_IMAGE_MAX_BYTES     = 10 * 1024 * 1024  # 10 MB
+
+
+@app.route('/transcribe-image', methods=['POST'])
+@limiter.limit("20 per hour; 3 per minute")
+@csrf.exempt
+def transcribe_image():
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+
+    if 'image' not in request.files:
+        return jsonify({"error": "Brak pliku obrazu"}), 400
+    f = request.files['image']
+    if not f or not f.filename:
+        return jsonify({"error": "Brak pliku obrazu"}), 400
+
+    mime = (f.mimetype or '').lower()
+    raw_ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
+    if mime not in _ALLOWED_IMAGE_MIMES and raw_ext not in _ALLOWED_IMAGE_EXTS:
+        return jsonify({"error": "Nieobsługiwany format. Dozwolone: JPG, PNG, WEBP, GIF"}), 400
+
+    data = f.read()
+    if len(data) > _IMAGE_MAX_BYTES:
+        return jsonify({"error": "Plik za duży (max 10 MB)"}), 400
+
+    # Resolve MIME for base64 data URL
+    ext = raw_ext if raw_ext in _ALLOWED_IMAGE_EXTS else 'jpeg'
+    content_type = mime if mime in _ALLOWED_IMAGE_MIMES else f'image/{"jpeg" if ext == "jpg" else ext}'
+
+    # Save file
+    user_hash = hashlib.sha256(user_email.encode()).hexdigest()[:16]
+    user_dir  = os.path.join(IMAGE_UPLOAD_FOLDER, user_hash)
+    os.makedirs(user_dir, exist_ok=True)
+    stored_name = f"{uuid.uuid4().hex}.{ext}"
+    abs_path    = os.path.join(user_dir, stored_name)
+    with open(abs_path, 'wb') as fp:
+        fp.write(data)
+    rel_path = os.path.relpath(abs_path, BASE_DIR)
+
+    # Mode
+    mode = request.form.get('mode', 'describe')
+    safe_fname = secure_filename(f.filename) or 'image'
+    if mode == 'ocr':
+        prompt = ("Odczytaj i przepisz dokładnie cały tekst widoczny na obrazie. "
+                  "Zachowaj oryginalne formatowanie i strukturę. "
+                  "Jeśli na obrazie nie ma tekstu, napisz: 'Brak tekstu na obrazie.'")
+        display_title = f"OCR: {safe_fname}"
+    else:
+        prompt = ("Opisz szczegółowo zawartość tego obrazu w języku polskim. "
+                  "Uwzględnij wszystkie widoczne elementy, tekst, osoby, przedmioty i kontekst.")
+        display_title = f"Obraz: {safe_fname}"
+
+    # Call OpenAI Vision
+    try:
+        api_key = require_provider_api_key("openai")
+    except Exception as e:
+        try: os.remove(abs_path)
+        except OSError: pass
+        return jsonify({"error": f"Brak klucza API OpenAI: {e}"}), 400
+
+    b64 = base64.b64encode(data).decode()
+    vision_payload = {
+        "model": _IMAGE_VISION_MODEL,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {
+                    "url": f"data:{content_type};base64,{b64}",
+                    "detail": "high"
+                }}
+            ]
+        }],
+        "max_tokens": 4096
+    }
+    try:
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=vision_payload,
+            timeout=90
+        )
+        resp.raise_for_status()
+        raw_text = resp.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        try: os.remove(abs_path)
+        except OSError: pass
+        log_app_error(user_email, 'image_transcription', str(e))
+        return jsonify({"error": f"Błąd API OpenAI Vision: {e}"}), 500
+
+    try:
+        record_id, project_id = save_transcription_history(
+            user_email, display_title, raw_text, raw_text,
+            notes_model_used=_IMAGE_VISION_MODEL,
+            image_path=rel_path
+        )
+    except Exception as e:
+        log_app_error(user_email, 'image_transcription', str(e))
+        return jsonify({"error": "Błąd zapisu do historii"}), 500
+
+    return jsonify({
+        "raw_text":   raw_text,
+        "notes":      raw_text,
+        "record_id":  record_id,
+        "project_id": project_id,
+        "image_path": rel_path,
+        "filename":   display_title
+    })
+
+
+@app.route('/image/<int:record_id>')
+def serve_image(record_id):
+    user_email = get_authenticated_user()
+    if not user_email:
+        return jsonify({"error": "Brak autoryzacji"}), 401
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT image_path FROM history WHERE id = ? AND user_email = ?",
+        (record_id, user_email)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row or not row[0]:
+        return jsonify({"error": "Nie znaleziono obrazu"}), 404
+
+    abs_path = os.path.realpath(os.path.join(BASE_DIR, row[0]))
+    upload_base = os.path.realpath(IMAGE_UPLOAD_FOLDER)
+    if not abs_path.startswith(upload_base + os.sep):
+        return jsonify({"error": "Niedozwolona ścieżka"}), 403
+    if not os.path.isfile(abs_path):
+        return jsonify({"error": "Plik nie istnieje"}), 404
+
+    return send_file(abs_path)
 
 
 if __name__ == '__main__':

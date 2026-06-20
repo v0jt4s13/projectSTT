@@ -445,6 +445,9 @@
             <button class="src-btn src-btn--text" id="sb-text" onclick="selectSrc('text')">
                 <span class="src-icon">⌨️</span>Tekst
             </button>
+            <button class="src-btn src-btn--img" id="sb-img" onclick="selectSrc('img')">
+                <span class="src-icon">📷</span>Obraz
+            </button>
         </div>
 
         <!-- MIC INPUT -->
@@ -495,6 +498,31 @@
                       placeholder="Wklej tekst lub adresy URL (jeden na linię, każdy zaczynając od https://)…"></textarea>
             <button class="btn-main" style="background: rgba(16,185,129,0.85);"
                     onclick="processText()">⌨️ Prześlij treść</button>
+        </div>
+
+        <!-- IMAGE INPUT (T5) -->
+        <div id="si-img" class="src-input">
+            <input type="file" id="img-file-input" accept="image/jpeg,image/png,image/webp,image/gif"
+                   style="display:none;" onchange="onImageChosen()">
+            <button class="btn-secondary" style="width:100%;"
+                    onclick="document.getElementById('img-file-input').click()">
+                📂 Wybierz obraz (JPG / PNG / WEBP / GIF)
+            </button>
+            <div id="img-preview-wrap" style="display:none; margin-top:10px; text-align:center;">
+                <img id="img-preview" src="" alt="podgląd"
+                     style="max-width:100%; max-height:180px; border-radius:8px; object-fit:contain;">
+                <div id="img-chosen-name" style="font-size:12px; color:var(--text-muted); margin-top:4px;"></div>
+            </div>
+            <div class="img-mode-row" id="img-mode-row" style="display:none;">
+                <label class="img-mode-opt">
+                    <input type="radio" name="img-mode" value="describe" checked> Opisz obraz
+                </label>
+                <label class="img-mode-opt">
+                    <input type="radio" name="img-mode" value="ocr"> Odczytaj tekst (OCR)
+                </label>
+            </div>
+            <button id="img-process-btn" class="btn-main" style="display:none; background:rgba(168,85,247,0.85);"
+                    onclick="processImage()">📷 Analizuj obraz</button>
         </div>
 
     </div>
@@ -815,8 +843,8 @@
     /* ═══════════════════════════════════════════
        SOURCE SELECTION
     ═══════════════════════════════════════════ */
-    const SRC_BTNS   = { mic:'sb-mic', file:'sb-file', yt:'sb-yt', web:'sb-web', text:'sb-text' };
-    const SRC_INPUTS = { mic:'si-mic', file:'si-file', yt:'si-yt', web:'si-web', text:'si-text' };
+    const SRC_BTNS   = { mic:'sb-mic', file:'sb-file', yt:'sb-yt', web:'sb-web', text:'sb-text', img:'sb-img' };
+    const SRC_INPUTS = { mic:'si-mic', file:'si-file', yt:'si-yt', web:'si-web', text:'si-text', img:'si-img' };
 
     function selectSrc(type) {
         selectedSrc = type;
@@ -930,6 +958,79 @@
         const fd = buildFormData(null, '');
         fd.append('direct_text', text);
         submitFormData(fd);
+    }
+
+    /* ─── T5: Image processing ─── */
+    let _imgFile = null;
+
+    function onImageChosen() {
+        const inp = document.getElementById('img-file-input');
+        _imgFile = inp.files[0] || null;
+        const wrap = document.getElementById('img-preview-wrap');
+        const modeRow = document.getElementById('img-mode-row');
+        const procBtn = document.getElementById('img-process-btn');
+        if (!_imgFile) { wrap.style.display = 'none'; modeRow.style.display = 'none'; procBtn.style.display = 'none'; return; }
+        const url = URL.createObjectURL(_imgFile);
+        document.getElementById('img-preview').src = url;
+        document.getElementById('img-chosen-name').textContent = _imgFile.name;
+        wrap.style.display = 'block';
+        modeRow.style.display = 'flex';
+        procBtn.style.display = 'block';
+    }
+
+    async function processImage() {
+        if (!_imgFile) { showToast('Wybierz plik obrazu'); return; }
+        const mode = document.querySelector('input[name="img-mode"]:checked')?.value || 'describe';
+        const btn  = document.getElementById('img-process-btn');
+        const orig = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '⏳ Analizuję…';
+
+        const fd = new FormData();
+        fd.append('image', _imgFile);
+        fd.append('mode', mode);
+
+        try {
+            const resp = await fetch('/transcribe-image', { method: 'POST', body: fd });
+            const data = await resp.json();
+            if (!resp.ok || data.error) throw new Error(data.error || 'Błąd serwera');
+
+            currentTranscription = data.raw_text  || '';
+            currentNotes         = data.notes      || '';
+            docName              = data.filename   || 'Obraz';
+            activeRecordId       = data.record_id  || null;
+            activeProjectId      = data.project_id || null;
+            currentImageRecordId = data.record_id  || null;
+
+            closeOverlay('ov-source');
+            refreshTranscScreen();
+            refreshNotesScreen();
+            enableChat();
+            nav('transcription');
+            showToast('Obraz przeanalizowany ✓');
+        } catch (e) {
+            showToast('Błąd: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = orig;
+        }
+    }
+
+    /* ─── T6: Lightbox ─── */
+    let currentImageRecordId = null;
+
+    function openLightbox(recordId) {
+        const lb  = document.getElementById('img-lightbox');
+        const img = document.getElementById('img-lightbox-img');
+        if (!lb || !img) return;
+        img.src = '/image/' + recordId;
+        lb.classList.add('img-lightbox--open');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeLightbox() {
+        const lb = document.getElementById('img-lightbox');
+        if (lb) lb.classList.remove('img-lightbox--open');
+        document.body.style.overflow = '';
     }
 
     /* ═══════════════════════════════════════════
@@ -1544,8 +1645,11 @@
         const el = document.createElement('div');
         el.className = 'hist-item';
         const { chatInfo, authHtml } = _itemMeta(item);
+        const thumbHtml = item.image_path
+            ? `<div class="hist-thumb"><img src="/image/${item.id}" alt="obraz" loading="lazy"></div>` : '';
         el.innerHTML = `
             <div class="hist-info">
+                ${thumbHtml}
                 <div class="hist-title">
                     <div class="hist-meta-data">${esc(item.created_at).slice(0, 16)}</div>
                     ${esc(pName)}
@@ -1559,6 +1663,8 @@
         const hi = el.querySelector('.hist-info');
         hi.addEventListener('click', () => loadHistItem(item));
         addLongPress(hi, () => { loadHistItem(item); closeOverlay('ov-history'); });
+        const thumb = el.querySelector('.hist-thumb');
+        if (thumb) thumb.addEventListener('click', e => { e.stopPropagation(); openLightbox(item.id); });
         el.querySelector('.hist-assign-btn').addEventListener('click', (e) => { e.stopPropagation(); showAssignProjectModal(item); });
         el.querySelector('.hist-rename-btn').addEventListener('click', (e) => { e.stopPropagation(); renameHistItem(item, el, pid); });
         el.querySelector('.hist-del').addEventListener('click', (e) => delHistItem(item.id, e));
@@ -2268,6 +2374,12 @@
         <button class="modal-cancel-btn" onclick="closeAssignModal()">Anuluj</button>
     </div>
 </div>
+<!-- ─── T6: image lightbox ─── -->
+<div id="img-lightbox" class="img-lightbox" onclick="closeLightbox()">
+    <button class="img-lightbox-close" onclick="event.stopPropagation();closeLightbox()">✕</button>
+    <img id="img-lightbox-img" src="" alt="podgląd" onclick="event.stopPropagation()">
+</div>
+
 <!-- ─── T2: floating selection panel ─── -->
 <div id="sel-panel" class="sel-panel" aria-hidden="true">
     <button class="sel-btn" id="sel-copy" title="Kopiuj">⎘</button>
