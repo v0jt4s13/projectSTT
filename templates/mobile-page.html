@@ -855,6 +855,8 @@
         Object.values(SRC_INPUTS).forEach(id => document.getElementById(id).classList.remove('visible'));
         document.getElementById(SRC_BTNS[type]).classList.add('selected');
         document.getElementById(SRC_INPUTS[type]).classList.add('visible');
+        const bsheet = document.querySelector('#ov-source .bsheet');
+        if (bsheet) bsheet.scrollTo({ top: bsheet.scrollHeight, behavior: 'smooth' });
     }
 
     /* ═══════════════════════════════════════════
