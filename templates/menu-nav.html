@@ -20,7 +20,8 @@
             <a href="{{ url_for('index_page') }}" class="nav-item active">
                 <span class="nav-icon">🏠</span>Panel
             </a>
-            <a class="nav-item" onclick="openHistory(); closeOverlay('ov-sidebar');">
+            <a href="{{ url_for('index_page') }}" class="nav-item"
+               onclick="if(typeof openHistory!=='undefined'){openHistory();closeOverlay('ov-sidebar');return false;}">
                 <span class="nav-icon">🕒</span>Historia transkrypcji
             </a>
             <a href="{{ url_for('settings') }}" class="nav-item">
@@ -44,7 +45,8 @@
             <a href="{{ url_for('logs_page') }}" class="nav-item">
                 <span class="nav-icon">⚠️</span>Logi błędów
             </a>
-            <a class="nav-item" onclick="nav('chat'); closeOverlay('ov-sidebar');">
+            <a href="{{ url_for('index_page') }}" class="nav-item"
+               onclick="if(typeof nav!=='undefined'){nav('chat');closeOverlay('ov-sidebar');return false;}">
                 <span class="nav-icon">🤖</span>Czat z AI
             </a>
         </nav>
@@ -54,7 +56,7 @@
             <div class="sidebar-controls">
                 <button class="icon-btn font-btn" id="font-dec" onclick="decFontScale()" title="Zmniejsz czcionkę">A−</button>
                 <button class="icon-btn font-btn" id="font-inc" onclick="incFontScale()" title="Powiększ czcionkę">A+</button>
-                <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button>
+                <button class="icon-btn motyw-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button>
             </div>
             <a href="{{ url_for('logout') }}" class="logout-btn">
                 <span>↩</span> Wyloguj się

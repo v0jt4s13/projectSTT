@@ -71,6 +71,13 @@
                         </span>
                         {% endif %}
                     {% endfor %}
+                    {% if api_key_status.ollama_ip %}
+                    {% set olm = api_key_status.ollama_ip %}
+                    <span class="key-pill {{ 'ok' if olm.configured else 'missing' }}"
+                          title="{{ olm.value if olm.configured else 'Brak URL' }}">
+                        Ollama URL: {{ (olm.value[:28] + '…') if olm.configured and olm.value|length > 28 else (olm.value if olm.configured else 'brak') }}
+                    </span>
+                    {% endif %}
                 </div>
                 <!-- <div>
                     Zmień motyw <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Motyw">🌙</button>
@@ -268,9 +275,29 @@
             </div>
             <div class="section-body">
 
+            <div class="model-filter-bar" id="model-filter-bar">
+                <div class="model-filter-row">
+                    <span class="model-filter-lbl">Provider</span>
+                    <button class="mf-pill active" data-filter-provider="all">Wszystkie</button>
+                    {% for prov_id, prov_cfg in providers.items() %}
+                    <button class="mf-pill" data-filter-provider="{{ prov_id }}">{{ prov_cfg.label }}</button>
+                    {% endfor %}
+                </div>
+                <div class="model-filter-row">
+                    <span class="model-filter-lbl">Typ</span>
+                    <button class="mf-pill active" data-filter-type="all">Wszystkie</button>
+                    {% for type_id, type_label in model_types.items() %}
+                    <button class="mf-pill" data-filter-type="{{ type_id }}">{{ type_label }}</button>
+                    {% endfor %}
+                </div>
+            </div>
+
             {% if models %}
                 {% for model in models %}
-                    <form action="{{ url_for('update_model', model_pk=model.id) }}" method="POST" class="model-editor">
+                    <form action="{{ url_for('update_model', model_pk=model.id) }}" method="POST"
+                          class="model-editor"
+                          data-provider="{{ model.provider }}"
+                          data-model-type="{{ model.model_type }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <div class="field">
                             <label for="provider_{{ model.id }}">Provider</label>
@@ -422,6 +449,35 @@
     <script nonce="{{ csp_nonce() }}">
         const MODEL_CATALOG = {{ model_catalog|tojson }};
         const LOCAL_MODEL_REQUIREMENTS = {{ local_model_requirements|tojson }};
+
+        // --- Model filter (models-setup) ---
+        (function() {
+            let activeProvider = 'all';
+            let activeType = 'all';
+
+            function applyFilter() {
+                document.querySelectorAll('#models-setup .model-editor').forEach(form => {
+                    const pMatch = activeProvider === 'all' || form.dataset.provider === activeProvider;
+                    const tMatch = activeType === 'all' || form.dataset.modelType === activeType;
+                    form.classList.toggle('hidden', !(pMatch && tMatch));
+                });
+            }
+
+            document.querySelectorAll('#model-filter-bar .mf-pill').forEach(pill => {
+                pill.addEventListener('click', () => {
+                    if ('filterProvider' in pill.dataset) {
+                        document.querySelectorAll('#model-filter-bar [data-filter-provider]').forEach(p => p.classList.remove('active'));
+                        pill.classList.add('active');
+                        activeProvider = pill.dataset.filterProvider;
+                    } else if ('filterType' in pill.dataset) {
+                        document.querySelectorAll('#model-filter-bar [data-filter-type]').forEach(p => p.classList.remove('active'));
+                        pill.classList.add('active');
+                        activeType = pill.dataset.filterType;
+                    }
+                    applyFilter();
+                });
+            });
+        })();
 
         // --- Section collapse ---
         const COLLAPSIBLE = ['local-models', 'model-activate', 'models-setup', 'pricing-table'];

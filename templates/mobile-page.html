@@ -1480,7 +1480,8 @@
     }
 
     function enableChat() {
-        document.getElementById('chat-empty').style.display = 'none';
+        const chatEmpty = document.getElementById('chat-empty');
+        if (chatEmpty) chatEmpty.style.display = 'none';
         const cmpBtn = document.getElementById('compare-btn');
         if (cmpBtn) cmpBtn.style.display = '';
         populateChatInputFromAuthenticityPrompt();
@@ -1930,7 +1931,9 @@
 
         if (item.chat_messages && item.chat_messages.length) {
             chatMessages = item.chat_messages;
-            document.getElementById('chat-feed').innerHTML = '';
+            const _feed = document.getElementById('chat-feed');
+            const _emptyEl = document.getElementById('chat-empty');
+            [..._feed.children].forEach(el => { if (el !== _emptyEl) el.remove(); });
             item.chat_messages.forEach(m => {
                 const s = m.role === 'assistant' ? extractChatAuthScore(m.content) : null;
                 appendBubble(m.role, m.content, false, s);
@@ -2201,13 +2204,18 @@
             const res = await fetch(`${BASE}/api/projects`, {headers: {'X-CSRFToken': getCsrfToken()}});
             const projects = await res.json();
             listEl.innerHTML = '';
-            projects.filter(p => p.id !== item.project_id).forEach(p => {
-                const el = document.createElement('div');
-                el.className = 'modal-proj-item';
-                el.textContent = `📁 ${p.name} (${p.source_count} źr.)`;
-                el.addEventListener('click', () => assignToProject(p.id, p.name));
-                listEl.appendChild(el);
-            });
+            projects
+                .filter(p => p.id !== item.project_id && p.source_count > 0)
+                .forEach(p => {
+                    const n = p.source_count;
+                    const el = document.createElement('div');
+                    el.className = 'modal-proj-item'
+                        + (n > 10 ? ' proj-load--critical' : n >= 6 ? ' proj-load--high' : n >= 3 ? ' proj-load--mid' : '');
+                    el.innerHTML = `<span class="proj-item-name">📁 ${esc(p.name)}</span>`
+                        + `<span class="proj-item-cnt">${n} źr.</span>`;
+                    el.addEventListener('click', () => assignToProject(p.id, p.name));
+                    listEl.appendChild(el);
+                });
             if (!listEl.children.length)
                 listEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;">Brak innych projektów.</div>';
         } catch {

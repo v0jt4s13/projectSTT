@@ -124,3 +124,45 @@ div.section-body .field {
     }
     #api-keys-table td[data-label=""]::before { display: none; }
 }
+
+/* ── Model filter bar (models-setup section) ─────────────────────────────── */
+.model-filter-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 0 16px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 16px;
+}
+.model-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.model-filter-lbl {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+    min-width: 56px;
+}
+.mf-pill {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--border-color);
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+}
+.mf-pill:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+.mf-pill.active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #fff;
+}
+.model-editor.hidden { display: none; }
