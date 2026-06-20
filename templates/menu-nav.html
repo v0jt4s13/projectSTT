@@ -34,7 +34,8 @@
             <a href="{{ url_for('usage_history') }}" class="nav-item">
                 <span class="nav-icon">📊</span>Zużycie tokenów
             </a>
-            <a class="nav-item" onclick="nav('reports'); closeOverlay('ov-sidebar');">
+            <a href="{{ url_for('index_page') }}" class="nav-item"
+               onclick="if(typeof nav!=='undefined'){nav('reports');closeOverlay('ov-sidebar');return false;}">
                 <span class="nav-icon">⚖️</span>Raport porównania modeli
             </a>
             <a href="{{ url_for('change_password') }}" class="nav-item">

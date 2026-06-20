@@ -2352,10 +2352,8 @@
     <div class="backdrop" onclick="closeOverlay('ov-compare')"></div>
     <div class="bsheet bsheet--tall">
         <div class="bsheet-handle"></div>
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:0 16px 10px;">
-            <span class="bsheet-title" style="margin:0;">⚖️ Porównanie modeli</span>
-            <button class="back-btn" onclick="closeOverlay('ov-compare')">✕</button>
-        </div>
+        <button class="bsheet-close" onclick="closeOverlay('ov-compare')" aria-label="Zamknij">✕</button>
+        <div class="bsheet-title">⚖️ Porównanie modeli</div>
 
         <!-- Źródła -->
         <div class="cmp-section-lbl">Źródła</div>

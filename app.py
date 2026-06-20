@@ -2056,8 +2056,13 @@ def logs_page():
     logs = [{"id": r[0], "level": r[1], "category": r[2],
              "message": r[3], "detail": r[4], "created_at": r[5]}
             for r in cursor.fetchall()]
+    cursor.execute("SELECT first_name, last_name FROM users WHERE email = ?", (user_email,))
+    _u = cursor.fetchone()
     conn.close()
-    return render_template('logs-page.html', logs=logs)
+    current_user = {"email": user_email,
+                    "first_name": _u[0] if _u else "",
+                    "last_name":  _u[1] if _u else ""}
+    return render_template('logs-page.html', logs=logs, user=current_user)
 
 
 @app.route('/api/logs', methods=['DELETE'])
