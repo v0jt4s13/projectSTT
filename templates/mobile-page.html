@@ -1358,6 +1358,8 @@
         if (!loading) {
             const footer = document.createElement('div');
             footer.className = 'bubble-footer';
+
+            // ⎘ Copy
             const copyBtn = document.createElement('button');
             copyBtn.className = 'bubble-copy';
             copyBtn.title = 'Kopiuj';
@@ -1373,6 +1375,21 @@
                 });
             });
             footer.appendChild(copyBtn);
+
+            // ⊡ Select all (T3) — only for AI bubbles
+            if (role !== 'user') {
+                const selBtn = document.createElement('button');
+                selBtn.className = 'bubble-copy';
+                selBtn.title = 'Zaznacz cały tekst';
+                selBtn.textContent = '⊡';
+                selBtn.addEventListener('click', e => {
+                    e.stopPropagation(); // prevent bubble expand
+                    window.getSelection()?.selectAllChildren(body);
+                    // selectionchange fires automatically → panel appears
+                });
+                footer.appendChild(selBtn);
+            }
+
             wrap.appendChild(footer);
         }
 
@@ -2251,5 +2268,116 @@
         <button class="modal-cancel-btn" onclick="closeAssignModal()">Anuluj</button>
     </div>
 </div>
+<!-- ─── T2: floating selection panel ─── -->
+<div id="sel-panel" class="sel-panel" aria-hidden="true">
+    <button class="sel-btn" id="sel-copy" title="Kopiuj">⎘</button>
+    <button class="sel-btn" id="sel-chat" title="Wyślij do czatu">💬</button>
+    <button class="sel-btn" id="sel-tts"  title="Czytaj">🔊</button>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+/* ══════════════════════════════════════════
+   T2: Selection panel
+══════════════════════════════════════════ */
+(function () {
+    let _text = '';
+    let _ttsActive = false;
+
+    const panel  = () => document.getElementById('sel-panel');
+    const ttsBtn = () => document.getElementById('sel-tts');
+
+    function _hide() {
+        const p = panel();
+        if (p) { p.style.display = 'none'; p.setAttribute('aria-hidden', 'true'); }
+        if (_ttsActive) { speechSynthesis.cancel(); _ttsActive = false; }
+    }
+
+    function _show(text, rect) {
+        _text = text;
+        const p = panel(); if (!p) return;
+        // Force layout to read actual width
+        p.style.visibility = 'hidden';
+        p.style.display    = 'flex';
+        const pw = p.offsetWidth  || 136;
+        const ph = p.offsetHeight || 48;
+        p.style.visibility = '';
+
+        const vw  = window.innerWidth;
+        let top   = rect.top - ph - 8;
+        if (top < 8) top = rect.bottom + 8;
+        let left  = rect.left + rect.width / 2 - pw / 2;
+        left = Math.max(8, Math.min(left, vw - pw - 8));
+
+        p.style.top  = top  + 'px';
+        p.style.left = left + 'px';
+        p.removeAttribute('aria-hidden');
+        const tb = ttsBtn();
+        if (tb) tb.textContent = _ttsActive ? '⏹' : '🔊';
+    }
+
+    function _check() {
+        const sel  = window.getSelection();
+        const text = sel?.toString().trim() || '';
+        if (!text || !sel.rangeCount) { _hide(); return; }
+        const rect = sel.getRangeAt(0).getBoundingClientRect();
+        if (!rect.width && !rect.height) { _hide(); return; }
+        _show(text, rect);
+    }
+
+    document.addEventListener('selectionchange', _check);
+    document.addEventListener('mouseup',  () => setTimeout(_check,  10), { passive: true });
+    document.addEventListener('touchend', () => setTimeout(_check, 150), { passive: true });
+
+    // Hide when clicking outside panel (but not on it)
+    document.addEventListener('mousedown', e => {
+        if (!panel()?.contains(e.target)) _hide();
+    });
+    document.addEventListener('touchstart', e => {
+        const p = panel();
+        if (p && p.style.display !== 'none' && !p.contains(e.target)) _hide();
+    }, { passive: true });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        // Prevent mousedown on buttons from clearing selection
+        document.querySelectorAll('.sel-btn').forEach(b =>
+            b.addEventListener('mousedown', e => e.preventDefault()));
+
+        // Copy
+        document.getElementById('sel-copy')?.addEventListener('click', () => {
+            navigator.clipboard.writeText(_text);
+            const b = document.getElementById('sel-copy');
+            if (b) { b.textContent = '✓'; setTimeout(() => { b.textContent = '⎘'; }, 1400); }
+            setTimeout(_hide, 1400);
+        });
+
+        // Send to chat
+        document.getElementById('sel-chat')?.addEventListener('click', () => {
+            const inp = document.getElementById('chat-input');
+            if (inp) { inp.value = _text; inp.dispatchEvent(new Event('input')); }
+            nav('chat');
+            window.getSelection()?.removeAllRanges();
+            _hide();
+        });
+
+        // TTS
+        document.getElementById('sel-tts')?.addEventListener('click', () => {
+            if (_ttsActive) {
+                speechSynthesis.cancel();
+                _ttsActive = false;
+                const tb = ttsBtn(); if (tb) tb.textContent = '🔊';
+                return;
+            }
+            const utt  = new SpeechSynthesisUtterance(_text);
+            utt.lang   = 'pl-PL';
+            const done = () => { _ttsActive = false; const tb = ttsBtn(); if (tb) tb.textContent = '🔊'; };
+            utt.onend  = done;
+            utt.onerror = done;
+            speechSynthesis.speak(utt);
+            _ttsActive = true;
+            const tb = ttsBtn(); if (tb) tb.textContent = '⏹';
+        });
+    });
+})();
+</script>
 </body>
 </html>

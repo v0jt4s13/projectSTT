@@ -907,3 +907,41 @@ html {
 }
 .font-btn:disabled { opacity: .3; cursor: default; }
 [data-theme="light"] .font-btn { border-color: rgba(0,0,0,0.12); }
+
+/* ── T2: selection panel ── */
+.sel-panel {
+    position: fixed;
+    align-items: center;
+    gap: 2px;
+    background: var(--bg-secondary, #1e1e1e);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 12px;
+    padding: 4px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    z-index: 9999;
+    pointer-events: auto;
+    user-select: none;
+}
+.sel-btn {
+    background: none;
+    border: none;
+    color: var(--text-primary, #e8e8e8);
+    font-size: 18px;
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background .15s;
+}
+.sel-btn:hover, .sel-btn:active { background: rgba(255,255,255,0.1); }
+[data-theme="light"] .sel-panel {
+    background: #fff;
+    border-color: rgba(0,0,0,0.1);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+}
+[data-theme="light"] .sel-btn { color: var(--text-primary, #1a1a1a); }
+[data-theme="light"] .sel-btn:hover { background: rgba(0,0,0,0.06); }
