@@ -957,6 +957,26 @@
         submitFormData(fd);
     }
 
+    function _syncDirectText() {
+        const text = document.getElementById('direct-text-input').value;
+        currentTranscription = text;
+        docName = 'Tekst';
+        activeRecordId  = null;
+        activeProjectId = null;
+        const tf = document.getElementById('transc-full');
+        if (text.trim()) {
+            tf.textContent = text;
+            tf.classList.remove('empty');
+        } else {
+            tf.textContent = 'Brak treści transkrypcji.\nWróć do ekranu głównego i wybierz źródło dźwięku.';
+            tf.classList.add('empty');
+        }
+        document.getElementById('player-name').textContent = text.trim() ? 'Tekst' : '—';
+        document.getElementById('player-meta').textContent = text.trim()
+            ? text.length.toLocaleString('pl-PL') + ' znaków' : 'Brak aktywnego nagrania';
+        refreshDashCards();
+    }
+
     function processText() {
         const text = document.getElementById('direct-text-input').value.trim();
         if (!text) { showToast('Wpisz lub wklej tekst'); return; }
@@ -2319,6 +2339,10 @@
 
         // init visibility of strip rows
         onSrcModeChange();
+
+        // live sync #direct-text-input → #screen-transcription
+        document.getElementById('direct-text-input')
+            .addEventListener('input', _syncDirectText);
     });
 </script>
 <!-- ═══════════════════════════════════════════════════════
