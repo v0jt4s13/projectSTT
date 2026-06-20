@@ -2037,9 +2037,17 @@
        COMPARE MODELS
     ═══════════════════════════════════════════ */
 
+    let _cmpListenersAttached = false;
     async function openCompare() {
         openOverlay('ov-compare');
         document.getElementById('cmp-results').innerHTML = '';
+        if (!_cmpListenersAttached) {
+            _cmpListenersAttached = true;
+            document.querySelectorAll('.cmp-model-input').forEach(cb => {
+                cb.addEventListener('change', loadCompareSources);
+            });
+            document.getElementById('cmp-notes-mode').addEventListener('change', loadCompareSources);
+        }
         await loadCompareSources();
     }
 
@@ -2047,21 +2055,49 @@
         const listEl = document.getElementById('cmp-source-list');
         listEl.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
         try {
-            const res = await fetch(`${BASE}/api/compare-notes/recent-sources`, {headers: {'X-CSRFToken': getCsrfToken()}});
+            const checkedModels = [...document.querySelectorAll('.cmp-model-input:checked')]
+                .map(el => el.dataset.name).filter(Boolean);
+            const notesMode = document.getElementById('cmp-notes-mode').value;
+
+            const params = new URLSearchParams();
+            checkedModels.forEach(n => params.append('model_name', n));
+            if (checkedModels.length || notesMode) params.set('notes_mode', notesMode);
+
+            const res = await fetch(`${BASE}/api/compare-notes/recent-sources?${params}`,
+                {headers: {'X-CSRFToken': getCsrfToken()}});
             const sources = await res.json();
             listEl.innerHTML = '';
+
+            const filterActive = checkedModels.length > 0;
+            if (filterActive) {
+                const badge = document.createElement('div');
+                badge.className = 'cmp-filter-badge';
+                badge.textContent = `Filtr: ${checkedModels.join(', ')} · ${notesMode}`;
+                listEl.appendChild(badge);
+            }
+
             sources.forEach(s => {
                 const label = document.createElement('label');
                 label.className = 'cmp-source-chk';
                 const checked = s.id === activeRecordId ? 'checked' : '';
+                const modelTag = s.notes_model_used
+                    ? `<span class="cmp-src-model">${esc(s.notes_model_used)}</span>` : '';
                 label.innerHTML = `
                     <input type="checkbox" class="cmp-source-input" value="${s.id}" ${checked}>
                     <span class="cmp-source-name">${esc(s.filename)}</span>
-                    <span class="hist-meta-data">${esc(s.created_at).slice(0,16)}</span>`;
+                    <span class="cmp-src-meta">
+                        <span class="hist-meta-data">${esc(s.created_at).slice(0,16)}</span>
+                        ${modelTag}
+                    </span>`;
                 listEl.appendChild(label);
             });
-            if (!listEl.children.length)
-                listEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;">Brak zapisanych źródeł.</div>';
+
+            if (!sources.length) {
+                const msg = filterActive
+                    ? 'Brak źródeł dla wybranych filtrów.'
+                    : 'Brak zapisanych źródeł.';
+                listEl.innerHTML += `<div class="cmp-empty-msg">${msg}</div>`;
+            }
         } catch {
             listEl.innerHTML = '<div style="padding:12px;color:var(--red);font-size:13px;">Błąd ładowania.</div>';
         }

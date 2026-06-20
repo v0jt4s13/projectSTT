@@ -58,6 +58,13 @@ def _m_history_image_path(c):
         return True
     return False
 
+def _m_history_notes_mode(c):
+    c.execute("PRAGMA table_info(history)")
+    if 'notes_mode' not in {r[1] for r in c.fetchall()}:
+        c.execute("ALTER TABLE history ADD COLUMN notes_mode TEXT NOT NULL DEFAULT 'full'")
+        return True
+    return False
+
 def _m_users_role(c):
     c.execute("PRAGMA table_info(users)")
     if 'role' not in {r[1] for r in c.fetchall()}:
@@ -85,6 +92,7 @@ MIGRATIONS = [
     ("history: add openai_usage_history",   _m_history_openai_usage),
     ("history: add project_id",             _m_history_project_id),
     ("history: add image_path",             _m_history_image_path),
+    ("history: add notes_mode",             _m_history_notes_mode),
     ("users:   add role + set admin",       _m_users_role),
     ("chat_history: add model_used + usage",_m_chat_history_model_used),
 ]

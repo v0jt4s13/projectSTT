@@ -1480,7 +1480,7 @@ def process_audio_transcription(file_path, processing_mode='offline', model_name
         "model_used": f"Lokalny Whisper ({model_name})"
     }
 
-def save_transcription_history(user_email, display_title, raw_text, notes, notes_model_used="", openai_usage_history=None, project_id=None, image_path=None):
+def save_transcription_history(user_email, display_title, raw_text, notes, notes_model_used="", openai_usage_history=None, project_id=None, image_path=None, notes_mode="full"):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     if project_id is None:
@@ -1491,8 +1491,8 @@ def save_transcription_history(user_email, display_title, raw_text, notes, notes
         project_id = cursor.lastrowid
     cursor.execute(
         """
-        INSERT INTO history (user_email, filename, raw_text, ai_notes, notes_model_used, openai_usage_history, project_id, image_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO history (user_email, filename, raw_text, ai_notes, notes_model_used, openai_usage_history, project_id, image_path, notes_mode)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_email,
@@ -1502,7 +1502,8 @@ def save_transcription_history(user_email, display_title, raw_text, notes, notes
             str(notes_model_used or "").strip(),
             serialize_openai_usage_history(openai_usage_history),
             project_id,
-            image_path
+            image_path,
+            str(notes_mode or "full").strip(),
         )
     )
     record_id = cursor.lastrowid
@@ -1687,6 +1688,8 @@ def init_db():
         cursor.execute("ALTER TABLE history ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL")
     if "image_path" not in history_columns:
         cursor.execute("ALTER TABLE history ADD COLUMN image_path TEXT")
+    if "notes_mode" not in history_columns:
+        cursor.execute("ALTER TABLE history ADD COLUMN notes_mode TEXT NOT NULL DEFAULT 'full'")
     # migrate: każdy history bez projektu dostaje własny projekt (single-source)
     cursor.execute("SELECT id, user_email, filename, created_at FROM history WHERE project_id IS NULL")
     for hid, email, fname, hcreated in cursor.fetchall():
@@ -3040,7 +3043,8 @@ def transcribe():
                 notatki_ai,
                 notes_model_used,
                 openai_usage_history,
-                project_id=project_id_form
+                project_id=project_id_form,
+                notes_mode=notes_mode,
             )
         except Exception as e:
             print(f"Nie udało się zapisać historii transkrypcji: {e}")
@@ -3139,7 +3143,8 @@ def api_youtube_transcribe():
             if save_to_history:
                 record_id, project_id = save_transcription_history(
                     user_email, saved_name,
-                    yt_transcript["text"], notatki_ai, notes_model_used, openai_usage_history
+                    yt_transcript["text"], notatki_ai, notes_model_used, openai_usage_history,
+                    notes_mode=notes_mode,
                 )
             return jsonify({
                 "text": yt_transcript["text"],
@@ -3186,7 +3191,8 @@ def api_youtube_transcribe():
                 transcription_result["text"],
                 transcription_result["notes"],
                 transcription_result.get("notes_model_used", ""),
-                openai_usage_history
+                openai_usage_history,
+                notes_mode=notes_mode,
             )
 
         return jsonify({
@@ -3289,7 +3295,8 @@ def api_webpage_read():
                 web_text,
                 notes,
                 notes_model_used,
-                openai_usage_history
+                openai_usage_history,
+                notes_mode=notes_mode,
             )
 
         return jsonify({
@@ -3857,16 +3864,36 @@ def compare_recent_sources():
     user_email = get_authenticated_user()
     if not user_email:
         return jsonify({"error": "Brak autoryzacji"}), 401
+
+    filter_model_names = request.args.getlist('model_name')   # display_name values
+    filter_mode        = request.args.get('notes_mode', '').strip()
+
+    conditions = ["user_email = ?", "raw_text != ''"]
+    params     = [user_email]
+
+    if filter_model_names:
+        clauses = " OR ".join(["notes_model_used LIKE ?"] * len(filter_model_names))
+        conditions.append(f"({clauses})")
+        params.extend(f"%{n}%" for n in filter_model_names)
+
+    if filter_mode and filter_mode != 'all':
+        conditions.append("COALESCE(notes_mode,'full') = ?")
+        params.append(filter_mode)
+
+    where = " AND ".join(conditions)
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, filename, datetime(created_at,'localtime') FROM history "
-        "WHERE user_email = ? AND raw_text != '' ORDER BY created_at DESC LIMIT 10",
-        (user_email,)
+        f"SELECT id, filename, datetime(created_at,'localtime'), notes_model_used, COALESCE(notes_mode,'full') "
+        f"FROM history WHERE {where} ORDER BY created_at DESC LIMIT 20",
+        params
     )
     rows = cursor.fetchall()
     conn.close()
-    return jsonify([{"id": r[0], "filename": r[1], "created_at": r[2]} for r in rows])
+    return jsonify([{
+        "id": r[0], "filename": r[1], "created_at": r[2],
+        "notes_model_used": r[3] or "", "notes_mode": r[4]
+    } for r in rows])
 
 
 @app.route('/api/projects', methods=['GET'])

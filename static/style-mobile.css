@@ -1170,3 +1170,36 @@ html {
     cursor: pointer;
 }
 .btn-ghost:hover { color: var(--text-primary); }
+
+/* ── Compare sources filter badge + model tag ── */
+.cmp-filter-badge {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 4px 12px 8px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 4px;
+}
+.cmp-src-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    align-items: flex-end;
+}
+.cmp-src-model {
+    font-size: 10px;
+    color: var(--accent-blue, #60a5fa);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+}
+.cmp-empty-msg {
+    padding: 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+.cmp-source-chk {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
