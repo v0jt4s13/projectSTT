@@ -106,15 +106,24 @@ html {
     max-height: 88vh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    transition: max-height .3s ease, border-radius .3s ease;
 }
 .bsheet--tall { max-height: 75vh; }
+.bsheet--expanded {
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+}
 
 .bsheet-handle {
     width: 40px; height: 4px;
     background: var(--text-muted);
     border-radius: 2px;
     margin: 0 auto 16px;
+    cursor: pointer;
+    transition: width .25s ease, opacity .2s;
 }
+.bsheet-handle:hover { opacity: .7; }
+.bsheet--expanded .bsheet-handle { width: 24px; }
 .bsheet-title {
     font-size: 17px; font-weight: 700; color: var(--text-primary);
     text-align: center; margin-bottom: 20px;

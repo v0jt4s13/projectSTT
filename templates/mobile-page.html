@@ -792,7 +792,17 @@
        OVERLAY MANAGEMENT
     ═══════════════════════════════════════════ */
     function openOverlay(id)  { document.getElementById(id).classList.add('open'); }
-    function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+    function closeOverlay(id) {
+        const el = document.getElementById(id);
+        el.classList.remove('open');
+        el.querySelector('.bsheet')?.classList.remove('bsheet--expanded');
+    }
+
+    document.addEventListener('click', e => {
+        const handle = e.target.closest('.bsheet-handle');
+        if (!handle) return;
+        handle.closest('.bsheet')?.classList.toggle('bsheet--expanded');
+    });
 
     function openSource()   { openOverlay('ov-source'); loadProjectsForSrcSel(); }
     function openSettings() { openOverlay('ov-settings'); }
