@@ -300,7 +300,9 @@ def require_role(*roles):
             if get_user_role(email) not in roles:
                 if request.is_json or request.path.startswith('/api/'):
                     return jsonify({"error": "Brak uprawnień"}), 403
-                return render_template('login-page.html', error="Brak uprawnień"), 403
+                from flask import flash
+                flash(f"Brak uprawnień. Wymagana rola: {', '.join(roles)}. Twoja rola: {get_user_role(email)}", "danger")
+                return redirect(url_for('mobile_page'))
             return f(*args, **kwargs)
         return wrapper
     return decorator
@@ -2734,6 +2736,14 @@ def ollama_ip_status():
         return jsonify({"available": False, "reason": "timeout", "url": base_url})
     except Exception:
         return jsonify({"available": False, "reason": "error", "url": base_url})
+
+
+@app.route('/api/whoami', methods=['GET'])
+def api_whoami():
+    email = get_authenticated_user()
+    if not email:
+        return jsonify({"authenticated": False}), 401
+    return jsonify({"authenticated": True, "email": email, "role": get_user_role(email)})
 
 
 @app.route('/api/notes-prompt/<mode>', methods=['GET'])

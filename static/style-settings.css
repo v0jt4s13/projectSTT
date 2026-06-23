@@ -2,7 +2,7 @@
 label,
 .checkbox-label {
     color: var(--text-muted);
-    font-size: 1em;
+    /* font-size: 1em; */
     font-weight: 600;
     padding-left: 0rem;
 }
@@ -19,7 +19,7 @@ select {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 10px 11px;
-    font-size: 13px;
+    /* font-size: 13px; */
     outline: none;
 }
 input[type="text"]:focus,
@@ -41,7 +41,7 @@ select:focus {
     cursor: pointer;
     color: #fff;
     background: var(--accent-gradient);
-    font-size: 13px;
+    /* font-size: 13px; */
     font-weight: 700;
     white-space: nowrap;
 }
@@ -50,7 +50,7 @@ select:focus {
     border: none;
     color: var(--red);
     cursor: pointer;
-    font-size: 2em;
+    /* font-size: 2em; */
     margin: 0.2em;
 }
 div.section-body .field {
@@ -101,11 +101,11 @@ div.section-body .field {
         padding: 5px 0;
         border: none;
         text-align: left !important;
-        font-size: 13px;
+        /* font-size: 13px; */
     }
     #api-keys-table td::before {
         content: attr(data-label);
-        font-size: 11px;
+        /* font-size: 11px; */
         font-weight: 600;
         color: var(--text-muted);
         text-transform: uppercase;
@@ -141,7 +141,7 @@ div.section-body .field {
     flex-wrap: wrap;
 }
 .model-filter-lbl {
-    font-size: 11px;
+    /* font-size: 11px; */
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .05em;
@@ -151,7 +151,7 @@ div.section-body .field {
 .mf-pill {
     padding: 4px 12px;
     border-radius: 20px;
-    font-size: 12px;
+    /* font-size: 12px; */
     font-weight: 600;
     border: 1px solid var(--border-color);
     background: none;

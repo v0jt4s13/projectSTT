@@ -913,7 +913,26 @@ function updateThemeBtn() {
     var btn = document.getElementById('theme-toggle');
     if (btn) btn.textContent = document.documentElement.getAttribute('data-theme') === 'light' ? '☀️' : '🌙';
 }
-document.addEventListener('DOMContentLoaded', updateThemeBtn);
+var FS_MIN = 0.85, FS_MAX = 1.50, FS_STEP = 0.05;
+function getFontScale() {
+    return parseFloat(document.documentElement.style.getPropertyValue('--font-scale') || '1') || 1;
+}
+function setFontScale(v) {
+    v = Math.round(Math.max(FS_MIN, Math.min(FS_MAX, v)) * 100) / 100;
+    document.documentElement.style.setProperty('--font-scale', v);
+    localStorage.setItem('font-scale', v);
+    var d = document.getElementById('font-dec');
+    var i = document.getElementById('font-inc');
+    if (d) d.disabled = v <= FS_MIN;
+    if (i) i.disabled = v >= FS_MAX;
+}
+function incFontScale() { setFontScale(getFontScale() + FS_STEP); }
+function decFontScale() { setFontScale(getFontScale() - FS_STEP); }
+document.addEventListener('DOMContentLoaded', function() {
+    updateThemeBtn();
+    var saved = parseFloat(localStorage.getItem('font-scale'));
+    if (saved) document.documentElement.style.setProperty('--font-scale', saved);
+});
 </script>
 </body>
 </html>
